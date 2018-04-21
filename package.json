@@ -3,9 +3,24 @@
   "version": "1.0.0",
   "description": "",
   "main": "database.js",
+  "dependencies": {
+    "angular-material": "^1.1.8",
+    "angular": "^1.6.10",
+    "express": "^4.16.3",
+    "mysql": "^2.15.0"
+  },
+  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elliotmoose/afterdarksgserver.git"
+  },
   "author": "kohbroco",
-  "license": "ISC"
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/elliotmoose/afterdarksgserver/issues"
+  },
+  "homepage": "https://github.com/elliotmoose/afterdarksgserver#readme"
 }
