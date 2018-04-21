@@ -15,6 +15,8 @@ app.use((request, response, next) => {
 app.use(bodyParse.json())
 app.use(bodyParse.urlencoded({extended:false}))
 app.use(express.static(path.join(__dirname,"public")))
+app.use('/scripts', express.static(__dirname + '/node_modules'));
+
 
 // Handles request to root only.
 app.get('/', (req, res) => {

@@ -3,13 +3,6 @@
   "version": "1.0.0",
   "description": "",
   "main": "database.js",
-  "dependencies": {
-    "angular-material": "^1.1.8",
-    "angular": "^1.6.10",
-    "express": "^4.16.3",
-    "mysql": "^2.15.0"
-  },
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -22,5 +15,15 @@
   "bugs": {
     "url": "https://github.com/elliotmoose/afterdarksgserver/issues"
   },
-  "homepage": "https://github.com/elliotmoose/afterdarksgserver#readme"
+  "homepage": "https://github.com/elliotmoose/afterdarksgserver#readme",
+  "dependencies": {
+    "angular": "^1.6.10",
+    "angular-animate": "^1.6.10",
+    "angular-aria": "^1.6.10",
+    "angular-material": "^1.1.8",
+    "angular-messages": "^1.6.10",
+    "body-parser": "^1.18.2",
+    "express": "^4.16.3",
+    "mysql": "^2.15.0"
+  }
 }
