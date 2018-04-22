@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/elliotmoose/afterdarksgserver#readme",
   "dependencies": {
+    "@google/maps": "^0.4.6",
     "angular": "^1.6.10",
     "angular-animate": "^1.6.10",
     "angular-aria": "^1.6.10",

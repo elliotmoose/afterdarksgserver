@@ -15,14 +15,16 @@
     <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.9/angular-aria.min.js"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.9/angular-messages.min.js"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/angular_material/1.1.8/angular-material.min.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDNKH8-roQ2pJKqB9CKA9GfMws_AeaHP_o&callback=initMap" async
+        defer>
+        </script>
 
-
-    <md-toolbar>
+    <md-toolbar md-whiteframe="5">
         <h1 style="text-align: center">AfterDarkSg Edit Bars</h1>
     </md-toolbar>
 
     <div class="container" layout="row" ng-controller="barListCont" flex>
-        <md-sidenav md-is-locked-open="true" class="lightblue">
+        <md-sidenav md-is-locked-open="true" md-whiteframe="5">
             <md-list>
                 <md-list-item ng-repeat="bar in bars">
                     <md-button ng-click="SelectedBar(bar)" style="text-align:left">
@@ -37,23 +39,34 @@
                 </md-list-item>
             </md-list>
         </md-sidenav>
-        <md-content class="lightgreen" flex>
+
+        <md-content class="contentContainer" flex>
             <div class="barDisplayForm {{displayFormShow}}">
                 <h1 style="text-align: center">{{selected.name}}</h1>
                 <form align="center">
-                    <textarea rows="7" cols="100">
-                            {{selected.about}}
+                    <textarea id="aboutTextArea" ng-model="selected.about">
+                            
                         </textarea>
                 </form>
+
+                <div id="map">
+
+                </div>
             </div>
+
+
+
         </md-content>
     </div>
 
-
-
-
     <script>
+        // var googleMapsClient = require('@google/maps').createClient({
+        //     key: 'AIzaSyDNKH8-roQ2pJKqB9CKA9GfMws_AeaHP_o'
+        // });
+
         var app = angular.module("main", ["ngMaterial", "ngMessages"]);
+        var map;
+        var marker;
 
         app.controller("barListCont", function ($scope, $http, $log) {
 
@@ -69,13 +82,36 @@
             $scope.SelectedBar = function (bar) {
                 $scope.displayFormShow = "show"
                 $scope.selected = bar
+
+                let latLong = { lat: bar.loc_lat, lng: bar.loc_long }
+
+                if (marker != undefined) {
+                    marker.setPosition(latLong)
+                }
+                else {
+                    marker = new google.maps.Marker({
+                        position: latLong,
+                        map: map,
+                        title: 'Hello World!'
+                    });
+                }
+
+                map.setCenter(latLong)
+                map.setZoom(15)
             }
 
             $scope.AddBar = function () {
                 console.log("Adding bar...")
             }
+
         })
 
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: -34.397, lng: 150.644 },
+                zoom: 15
+            });
+        }
 
     </script>
 
@@ -84,16 +120,29 @@
             background-color: lightblue;
         }
 
-        .lightgreen {
-            background-color: lightgreen;
-        }
-
         .hidden {
             display: none
         }
 
         .show {
             display: block
+        }
+        
+        .contentContainer
+        {
+            margin: 32px;
+        }
+
+        #aboutTextArea
+        {
+            width: 100%;
+            height: 250px;
+            text-align: left; 
+        }
+
+        #map {
+            width: 100%;
+            height: 400px;
         }
     </style>
 
