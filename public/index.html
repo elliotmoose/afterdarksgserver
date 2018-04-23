@@ -44,11 +44,12 @@
             <div class="barDisplayForm {{displayFormShow}}">
                 <h1 style="text-align: center">{{selected.name}}</h1>
                 <form align="center">
-                    <textarea id="aboutTextArea" ng-model="selected.about">
-                            
-                        </textarea>
+                    <textarea id="aboutTextArea" ng-model="selected.about"></textarea>
+                    <input style="top:20px" type="text" ng-model="selected.contact" class="barDetailInput">
+                    <input type="text" ng-model="selected.website" class="barDetailInput">
+                    <input type="text" ng-model="selected.address_summary" class="barDetailInput">
+                    <input type="text" ng-model="selected.address_full" class="barDetailInput">
                 </form>
-
                 <div id="map">
 
                 </div>
@@ -133,16 +134,22 @@
             margin: 32px;
         }
 
+        .barDetailInput
+        {
+            margin: 4px;
+            width: 70%;
+        }
         #aboutTextArea
         {
-            width: 100%;
+            width: 99%;
             height: 250px;
-            text-align: left; 
+            text-align: center; 
         }
 
         #map {
             width: 100%;
             height: 400px;
+            top:16px;
         }
     </style>
 

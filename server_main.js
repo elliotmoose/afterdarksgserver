@@ -13,67 +13,99 @@ app.use((request, response, next) => {
 })
 
 app.use(bodyParse.json())
-app.use(bodyParse.urlencoded({extended:false}))
-app.use(express.static(path.join(__dirname,"public")))
+app.use(bodyParse.urlencoded({ extended: false }))
+app.use(express.static(path.join(__dirname, "public")))
 app.use('/scripts', express.static(__dirname + '/node_modules'));
 
 
 // Handles request to root only.
 app.get('/', (req, res) => {
+  res.status(200);
+  res.type('text/html');
+  res.sendFile(path.resolve(__dirname, 'index.html'));
+});
 
-    // If you needed to modify the status code and content type, you would do so
-    // using the Express API, like so. However, this isn't necessary here; Express
-    // handles this automatically.
-    res.status(200);
-    res.type('text/html');
-  
-    // Use sendFile(absPath) rather than sendfile(path), which is deprecated.
-    res.sendFile(path.resolve(__dirname, 'index.html'));
-  });
 
-  app.get('/GetBarNames', (req, res) => {
+//query functions
+app.get('/GetBarNames', (req, res) => {
+  Query("SELECT * FROM bars_info", res)
+});
 
-    var con = ConnectDatabase()
+app.get('/GetDiscounts', (req, res) => {
+  Query("SELECT * FROM discounts", res)
+});
 
-    con.connect(function(err) {
-        if (err) throw err;
-        con.query("SELECT * FROM bars_info", function (err, result, fields) {
-          if (err) throw err;
-          res.status(200);
-          res.json(result)
-        });
-      });
-  });
-  app.get('/GetDiscounts', (req, res) => {
+//action functions
+app.post('/GenerateUser', (req, res) => {
 
-    var con = ConnectDatabase()
+  //get udid
+  // var id = req.body.uuid;
+  // Output(true,id,res);
+  // return;
 
-    con.connect(function(err) {
-        if (err) throw err;
-        con.query("SELECT * FROM discounts", function (err, result, fields) {
-          if (err) throw err;
-          res.status(200);
-          res.json(result)
-        });
-      });      
-  });
+  var id = req.body.uuid;
+  if(id == undefined)
+  {
+    Output(false,"No uuid specified",res);
+    return; 
+  }
+  else
+  {
+    var dateBegin = Math.round(new Date().getTime() / 1000);
+    var queryString = "INSERT INTO users (id,uuid,username,password,personalized,wallet,date_begin) VALUES (0,'"+id+"','','',0,'[]',"+dateBegin+")";
+    
+    Query(queryString,res);
+  } 
+
+});
 
 app.listen(8080)
 
 
-function ConnectDatabase()
+function ConnectDatabase() {
+  var con = mysql.createConnection({
+    host: "localhost",
+    user: "mooselliot",
+    password: "S9728155f",
+    database: "afterdarksg"
+  });
+
+  //   con.connect(function(err) {
+  //     if (err) throw err;
+  //     console.log("Connected!");
+  //   });
+
+  return con;
+}
+
+function Query(query, res) {
+  
+  var con = ConnectDatabase()
+  con.connect(function (err) {
+    
+    if (err) 
+    {
+      Output(false,err,res);
+      return;
+    }
+
+    con.query(query, function (err, result, fields) {
+
+      if (err) 
+      {
+        Output(false,err,res);
+        return;
+      }
+
+      Output(true,result,res);
+      return;
+    });
+  });  
+}
+
+function Output(success,output,res)
 {
-    var con = mysql.createConnection({
-        host: "localhost",
-        user: "mooselliot",
-        password: "S9728155f",
-        database: "afterdarksg"
-      });
-      
-    //   con.connect(function(err) {
-    //     if (err) throw err;
-    //     console.log("Connected!");
-    //   });
-      
-      return con;
+  var response = {success: String(success), output: output};
+  res.status(200);
+  res.send(response);
 }
