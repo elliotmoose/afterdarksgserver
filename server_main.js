@@ -56,8 +56,22 @@ app.post('/GenerateUser', (req, res) => {
     
     Query(queryString,res);
   } 
-
 });
+
+app.post('/RetrieveUser', (req, res) => {
+  var id = req.body.uuid;
+  if(id == undefined)
+  {
+    Output(false,"No uuid specified",res);
+    return; 
+  }
+  else
+  {
+    var queryString = "SELECT * FROM users WHERE uuid='"+id+"'";
+    Query(queryString,res);
+  } 
+});
+
 
 app.listen(8080)
 
