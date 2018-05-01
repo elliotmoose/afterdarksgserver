@@ -116,15 +116,50 @@ app.get('/AddDiscountToWalletForUser', (req, res) => {
       //check if wallet exists
       if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); }
 
+        wallet = JSON.stringify(wallet.push(discount_id));
+
+        var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id='${user_id}'`;
+        QueryDB(updateWalletString).then(function (data) { //update wallet
+          var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
+          QueryDB(getNewWalletString).then(function(data){ //get new wallet to return
+            let wallet = JSON.parse(data[0].wallet);
+            Output(true, wallet, res);
+          });
+        }).catch(function (err) {
+          Output(false, err, res);
+        });
+    });
+  }
+});
+
+app.get('/AddDiscountToWalletForUser', (req, res) => {
+  // var id = req.body.id;
+  // var discount_id = req.body.discount_id;
+  var user_id = parseInt(req.query.user_id);
+  var discount_id = parseInt(req.query.discount_id);
+
+  if (user_id == undefined || discount_id == undefined) {
+    Output(false, "No id specified", res);
+    return;
+  }
+  else {
+    var queryWallet = `SELECT wallet FROM users WHERE id='${user_id}'`;
+    QueryDB(queryWallet).then(function (data) {
+
+      let wallet = JSON.parse(data[0].wallet);
+
+      //check if wallet exists
+      if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); }
+
       //check if the discount exists
       if (wallet.indexOf(discount_id) > -1) {
 
         wallet = JSON.stringify(wallet.filter(discount => discount != discount_id));
 
         var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id='${user_id}'`;
-        QueryDB(updateWalletString).then(function (data) {
+        QueryDB(updateWalletString).then(function (data) { //update wallet
           var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
-          QueryDB(getNewWalletString).then(function(data){            
+          QueryDB(getNewWalletString).then(function(data){ //get new wallet to return
             let wallet = JSON.parse(data[0].wallet);
             Output(true, wallet, res);
           });
@@ -138,8 +173,6 @@ app.get('/AddDiscountToWalletForUser', (req, res) => {
       }
 
     });
-
-
   }
 });
 
