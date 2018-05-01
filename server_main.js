@@ -30,7 +30,6 @@ app.get('/', (req, res) => {
   res.sendFile(path.resolve(__dirname, 'index.html'));
 });
 
-
 //#region Get Generic Data 
 //query functions
 app.get('/GetBarNames', (req, res) => {
@@ -62,7 +61,7 @@ app.get('/GetImageForBar/:id', (req, res) => {
     res.sendFile(imagePath);
   }
   else {
-    Output(false,`image does not exist for this id ${id}`,res);
+    Output(false, `image does not exist for this id ${id}`, res);
   }
 });
 
@@ -98,20 +97,49 @@ app.post('/RetrieveUser', (req, res) => {
   }
 });
 
-app.post('/AddDiscountToWalletForUser', (req, res) => {
-  var id = req.body.id;
-  var discount_id = req.body.discount_id;
-  if (id == undefined || discount_id == undefined) {
+app.get('/AddDiscountToWalletForUser', (req, res) => {
+  // var id = req.body.id;
+  // var discount_id = req.body.discount_id;
+  var user_id = parseInt(req.query.user_id);
+  var discount_id = parseInt(req.query.discount_id);
+
+  if (user_id == undefined || discount_id == undefined) {
     Output(false, "No id specified", res);
     return;
   }
   else {
-    var queryString = "UPDATE * FROM users WHERE id='" + id + "'";
-    QueryDB(queryString).then(function (data) {
-      Output(true, data, res);
-    }).catch(function (err) {
-      Output(false, err, res);
+    var queryWallet = `SELECT wallet FROM users WHERE id='${user_id}'`;
+    QueryDB(queryWallet).then(function (data) {
+
+      let wallet = JSON.parse(data[0].wallet);
+
+      //check if wallet exists
+      if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); }
+
+      //check if the discount exists
+      if (wallet.indexOf(discount_id) > -1) {
+
+        wallet = JSON.stringify(wallet.filter(discount => discount != discount_id));
+
+        var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id='${user_id}'`;
+        QueryDB(updateWalletString).then(function (data) {
+          var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
+          QueryDB(getNewWalletString).then(function(data){            
+            let wallet = JSON.parse(data[0].wallet);
+            Output(true, wallet, res);
+          });
+        }).catch(function (err) {
+          Output(false, err, res);
+        });
+
+      } else {
+        Output(false, "Couldnt find discount with ID:" + JSON.stringify(discount_id), res);
+        return
+      }
+
     });
+
+
   }
 });
 
@@ -126,7 +154,7 @@ app.post('/AddDiscountClaim', (req, res) => {
   else {
     var epoch = Math.round(new Date().getTime() / 1000);
     var queryString = `INSERT INTO discount_claims (id,discount_id,user_id,date) values (0,${discount_id},${user_id},${epoch})`;
-    
+
     QueryDB(queryString).then(function (data) {
       Output(true, data, res);
     }).catch(function (err) {
@@ -134,7 +162,7 @@ app.post('/AddDiscountClaim', (req, res) => {
     });
   }
 
-  
+
 });
 
 
@@ -171,10 +199,10 @@ function ConnectDatabase() {
     database: "afterdarksg"
   });
 
-    con.connect(function(err) {
-      if (err) throw err;
-      console.log("Connected to database");
-    });
+  con.connect(function (err) {
+    if (err) throw err;
+    console.log("Connected to database");
+  });
   // con.connect(function (err) {
 
   //   if (err) {
@@ -197,12 +225,12 @@ function ConnectDatabase() {
 //       Output(true, result, res);
 //       return;
 //     });
- 
+
 // }
 
 function QueryDB(query) {
   return new Promise(function (resolve, reject) {
-    
+
     con.query(query, function (err, result, fields) {
       if (err) {
         reject(err);

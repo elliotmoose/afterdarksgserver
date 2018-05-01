@@ -77,7 +77,7 @@
 
             //get bar details
             $http.get('http://localhost:8080/GetBarNames').then(function (response) {
-                $scope.bars = response.data
+                $scope.bars = response.data.output;
             });
 
             $scope.SelectedBar = function (bar) {
