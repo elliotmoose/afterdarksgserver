@@ -97,11 +97,10 @@ app.post('/RetrieveUser', (req, res) => {
   }
 });
 
-app.get('/AddDiscountToWalletForUser', (req, res) => {
-  // var id = req.body.id;
-  // var discount_id = req.body.discount_id;
-  var user_id = parseInt(req.query.user_id);
-  var discount_id = parseInt(req.query.discount_id);
+app.post('/AddDiscountToWalletForUser', (req, res) => {
+
+  var user_id = parseInt(req.body.user_id);
+  var discount_id = parseInt(req.body.discount_id);
 
   if (user_id == undefined || discount_id == undefined) {
     Output(false, "No id specified", res);
@@ -115,28 +114,63 @@ app.get('/AddDiscountToWalletForUser', (req, res) => {
 
       //check if wallet exists
       if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); }
+      
+      //check if discount already added
+      if (wallet.indexOf(discount_id) > -1)
+      {
+        Output(false,"Discount already in wallet",res);
+        return;
+      }
 
-        wallet = JSON.stringify(wallet.push(discount_id));
+      //check if wallet is full
+      if(wallet.length == 4)
+      {
+        Output(false,"Your wallet is full!",res);
+        return;
+      }
 
+      //check if discount has run out
+      var discountQueryString = `SELECT curAvailCount FROM discounts WHERE id=${discount_id}`;
+      QueryDB(discountQueryString).then(function(data){
+        
+        var curAvailCount = data[0].curAvailCount;
+
+        console.log(JSON.stringify(data));
+        console.log(curAvailCount);
+        if (curAvailCount == 0){
+          Output(false,"Discount fully claimed",res);
+          return;
+        }
+
+        wallet.push(discount_id);
+        wallet = JSON.stringify(wallet);
+  
         var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id='${user_id}'`;
         QueryDB(updateWalletString).then(function (data) { //update wallet
-          var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
-          QueryDB(getNewWalletString).then(function(data){ //get new wallet to return
-            let wallet = JSON.parse(data[0].wallet);
-            Output(true, wallet, res);
+          var getDiscountCurrentCountString = `SELECT curAvailCount FROM discounts WHERE id=${discount_id}`;
+          QueryDB(getDiscountCurrentCountString).then(function (data) { //get old counter
+            var reduceDiscountCounterString = `UPDATE discounts SET curAvailCount=${data[0].curAvailCount - 1} WHERE id='${discount_id}'`;
+            QueryDB(reduceDiscountCounterString).then(function (data) { //set new counter
+              var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
+              QueryDB(getNewWalletString).then(function (data) { //get new wallet to return
+                let wallet = JSON.parse(data[0].wallet);
+                Output(true, wallet, res);
+              });
+            });
           });
         }).catch(function (err) {
           Output(false, err, res);
         });
+      });
     });
   }
 });
 
-app.get('/AddDiscountToWalletForUser', (req, res) => {
+app.post('/AddDiscountClaim', (req, res) => {
   // var id = req.body.id;
   // var discount_id = req.body.discount_id;
-  var user_id = parseInt(req.query.user_id);
-  var discount_id = parseInt(req.query.discount_id);
+  var user_id = parseInt(req.body.user_id);
+  var discount_id = parseInt(req.body.discount_id);
 
   if (user_id == undefined || discount_id == undefined) {
     Output(false, "No id specified", res);
@@ -156,13 +190,21 @@ app.get('/AddDiscountToWalletForUser', (req, res) => {
 
         wallet = JSON.stringify(wallet.filter(discount => discount != discount_id));
 
-        var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id='${user_id}'`;
-        QueryDB(updateWalletString).then(function (data) { //update wallet
-          var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
-          QueryDB(getNewWalletString).then(function(data){ //get new wallet to return
-            let wallet = JSON.parse(data[0].wallet);
-            Output(true, wallet, res);
+        var epoch = Math.round(new Date().getTime() / 1000);
+
+        var discountClaimString = `INSERT INTO discount_claims (id,discount_id,user_id,date) values (0,${discount_id},${user_id},${epoch})`;
+        QueryDB(discountClaimString).then(function (data) { //add discount claim
+          var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id=${user_id}`;
+          QueryDB(updateWalletString).then(function (data) { //update wallet            
+            var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
+            QueryDB(getNewWalletString).then(function (data) { //get new wallet to return
+              let wallet = JSON.parse(data[0].wallet);
+              Output(true, wallet, res);
+            });
+          }).catch(function (err) {
+            Output(false, err, res);
           });
+
         }).catch(function (err) {
           Output(false, err, res);
         });
@@ -176,7 +218,7 @@ app.get('/AddDiscountToWalletForUser', (req, res) => {
   }
 });
 
-app.post('/AddDiscountClaim', (req, res) => {
+app.post('/testAddDiscountClaim', (req, res) => {
   var user_id = req.body.user_id;
   var discount_id = req.body.discount_id;
 
