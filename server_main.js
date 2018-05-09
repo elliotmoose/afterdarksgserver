@@ -113,53 +113,58 @@ app.post('/AddDiscountToWalletForUser', (req, res) => {
       let wallet = JSON.parse(data[0].wallet);
 
       //check if wallet exists
-      if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); }
-      
+      if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); return; }
+
       //check if discount already added
-      if (wallet.indexOf(discount_id) > -1)
-      {
-        Output(false,"Discount already in wallet",res);
-        return;
-      }
+      wallet.forEach(discount => {
+        if (discount.id == discount_id) {
+          isDiscountPresent = true;
+          Output(false, "Discount already in wallet", res);
+          return;
+        }
+      });
+
 
       //check if wallet is full
-      if(wallet.length == 4)
-      {
-        Output(false,"Your wallet is full!",res);
+      if (wallet.length == 4) {
+        Output(false, "Your wallet is full!", res);
         return;
       }
 
       //check if discount has run out
       var discountQueryString = `SELECT curAvailCount FROM discounts WHERE id=${discount_id}`;
-      QueryDB(discountQueryString).then(function(data){
-        
+      QueryDB(discountQueryString).then(function (data) {
+
         var curAvailCount = data[0].curAvailCount;
 
-        console.log(JSON.stringify(data));
-        console.log(curAvailCount);
-        if (curAvailCount == 0){
-          Output(false,"Discount fully claimed",res);
+        if (curAvailCount == 0) {
+          Output(false, "Discount fully claimed", res);
           return;
         }
 
-        wallet.push(discount_id);
+        var dateBegin = Math.round(new Date().getTime() / 1000);
+        var newDiscount = {
+          id: discount_id,
+          dateBegin: dateBegin
+        };
+
+        wallet.push(newDiscount);
         wallet = JSON.stringify(wallet);
-  
+
         var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id='${user_id}'`;
         QueryDB(updateWalletString).then(function (data) { //update wallet
-          var getDiscountCurrentCountString = `SELECT curAvailCount FROM discounts WHERE id=${discount_id}`;
-          QueryDB(getDiscountCurrentCountString).then(function (data) { //get old counter
-            var reduceDiscountCounterString = `UPDATE discounts SET curAvailCount=${data[0].curAvailCount - 1} WHERE id='${discount_id}'`;
-            QueryDB(reduceDiscountCounterString).then(function (data) { //set new counter
-              var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
-              QueryDB(getNewWalletString).then(function (data) { //get new wallet to return
-                let wallet = JSON.parse(data[0].wallet);
-                Output(true, wallet, res);
-              });
+          var reduceDiscountCounterString = `UPDATE discounts SET curAvailCount=${curAvailCount - 1} WHERE id='${discount_id}'`;
+          QueryDB(reduceDiscountCounterString).then(function (data) { //set new counter
+            var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
+            QueryDB(getNewWalletString).then(function (data) { //get new wallet to return
+              let wallet = JSON.parse(data[0].wallet);
+              Output(true, wallet, res);
+              return;
             });
           });
         }).catch(function (err) {
           Output(false, err, res);
+          return;
         });
       });
     });
@@ -185,35 +190,41 @@ app.post('/AddDiscountClaim', (req, res) => {
       //check if wallet exists
       if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); }
 
+      var hasDiscount = false;
       //check if the discount exists
-      if (wallet.indexOf(discount_id) > -1) {
+      wallet.forEach(discountObject => {
+        if (discountObject.id == discount_id) {
+          hasDiscount = true;
 
-        wallet = JSON.stringify(wallet.filter(discount => discount != discount_id));
+          wallet = JSON.stringify(wallet.filter(discount => discount.id != discount_id));
+          var epoch = Math.round(new Date().getTime() / 1000);
 
-        var epoch = Math.round(new Date().getTime() / 1000);
-
-        var discountClaimString = `INSERT INTO discount_claims (id,discount_id,user_id,date) values (0,${discount_id},${user_id},${epoch})`;
-        QueryDB(discountClaimString).then(function (data) { //add discount claim
-          var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id=${user_id}`;
-          QueryDB(updateWalletString).then(function (data) { //update wallet            
-            var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
-            QueryDB(getNewWalletString).then(function (data) { //get new wallet to return
-              let wallet = JSON.parse(data[0].wallet);
-              Output(true, wallet, res);
+          var discountClaimString = `INSERT INTO discount_claims (id,discount_id,user_id,date) values (0,${discount_id},${user_id},${epoch})`;
+          QueryDB(discountClaimString).then(function (data) { //add discount claim
+            var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id=${user_id}`;
+            QueryDB(updateWalletString).then(function (data) { //update wallet            
+              var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
+              QueryDB(getNewWalletString).then(function (data) { //get new wallet to return
+                let wallet = JSON.parse(data[0].wallet);
+                Output(true, wallet, res);
+                return;
+              });
+            }).catch(function (err) {
+              Output(false, err, res);
+              return;
             });
+
           }).catch(function (err) {
             Output(false, err, res);
+            return;
           });
+        }
+      });
 
-        }).catch(function (err) {
-          Output(false, err, res);
-        });
-
-      } else {
-        Output(false, "Couldnt find discount with ID:" + JSON.stringify(discount_id), res);
-        return
+      if (hasDiscount == false) {
+        Output(false, "User does not have this discount", res);
+        return;
       }
-
     });
   }
 });
@@ -320,4 +331,9 @@ function Output(success, output, res) {
   var response = { success: String(success), output: output };
   res.status(200);
   res.send(response);
+
+  // if(success == false)
+  // {
+  //   console.log(JSON.stringify(output));
+  // }
 }
