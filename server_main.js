@@ -8,8 +8,6 @@ const EXPIRY_PERIOD = 3600*24*2; //24 hours
 
 var con = ConnectDatabase();
 
-
-
 //#region express
 app.use((request, response, next) => {
   //console.log(request.headers)
@@ -117,14 +115,18 @@ app.post('/AddDiscountToWalletForUser', (req, res) => {
       if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); return; }
 
       //check if discount already added
+      var isDiscountPresent = false;
       wallet.forEach(discount => {
         if (discount.id == discount_id) {
           isDiscountPresent = true;
-          Output(false, "Discount already in wallet", res);
-          return;
         }
       });
 
+      if(isDiscountPresent)
+      {
+        Output(false, "Discount already in wallet", res);
+        return;
+      }
 
       //check if wallet is full
       if (wallet.length == 4) {
