@@ -4,6 +4,7 @@ const path = require('path')
 const app = express()
 const mysql = require('mysql');
 const fs = require('fs');
+const EXPIRY_PERIOD = 3600*24*2; //24 hours
 
 var con = ConnectDatabase();
 
@@ -142,10 +143,10 @@ app.post('/AddDiscountToWalletForUser', (req, res) => {
           return;
         }
 
-        var dateBegin = Math.round(new Date().getTime() / 1000);
+        var expiry = Math.round(new Date().getTime() / 1000) + EXPIRY_PERIOD ;
         var newDiscount = {
           id: discount_id,
-          dateBegin: dateBegin
+          expiry: expiry
         };
 
         wallet.push(newDiscount);
@@ -229,29 +230,6 @@ app.post('/AddDiscountClaim', (req, res) => {
   }
 });
 
-app.post('/testAddDiscountClaim', (req, res) => {
-  var user_id = req.body.user_id;
-  var discount_id = req.body.discount_id;
-
-  if (user_id == undefined || discount_id == undefined) {
-    Output(false, "No id specified", res);
-    return;
-  }
-  else {
-    var epoch = Math.round(new Date().getTime() / 1000);
-    var queryString = `INSERT INTO discount_claims (id,discount_id,user_id,date) values (0,${discount_id},${user_id},${epoch})`;
-
-    QueryDB(queryString).then(function (data) {
-      Output(true, data, res);
-    }).catch(function (err) {
-      Output(false, err, res);
-    });
-  }
-
-
-});
-
-
 app.post('/GetWalletForUser', (req, res) => {
   var id = req.body.id;
   if (id == undefined) {
@@ -259,19 +237,39 @@ app.post('/GetWalletForUser', (req, res) => {
     return;
   }
   else {
+    //check whether any of the discounts have expired 
+    //if expired, remove
+
     var walletOutput;
     QueryDB("SELECT wallet FROM users WHERE id='" + id + "'").then(function (walletData) {
       walletOutput = JSON.parse(walletData[0].wallet);
-    }).then(function () {
-      Output(true, walletOutput, res);
-      return;
+      
+      var wallet = walletOutput.filter(CheckDiscountHasExpired);
+
+      // wallet.forEach(discount => {
+      //   console.log(epoch-discount.dateBegin>(60*60*24*3));
+      // })
+      // console.log("wallet:" + wallet);
+
+      var query = `UPDATE users SET wallet='${JSON.stringify(wallet)}' WHERE id=${id}`;
+      QueryDB(query).then(function (data) {        
+        Output(true, wallet, res);
+        return;
+      });
     }).catch(function (err) {
+      
       Output(false, err, res);
     });
   }
 });
 
 
+
+function CheckDiscountHasExpired(discount)
+{
+  var epoch = Math.round(new Date().getTime() / 1000);
+  return (epoch-discount.expiry) < 3600*24*2;
+}
 
 
 app.listen(8080)
