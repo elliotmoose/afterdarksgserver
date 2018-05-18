@@ -109,6 +109,13 @@ app.post('/AddDiscountToWalletForUser', (req, res) => {
     var queryWallet = `SELECT wallet FROM users WHERE id='${user_id}'`;
     QueryDB(queryWallet).then(function (data) {
 
+      if(data == [])
+      {
+        Output(false,"Hmm.. There seems to be an error,res");
+        return;
+      }
+
+
       let wallet = JSON.parse(data[0].wallet);
 
       //check if wallet exists
