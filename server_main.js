@@ -66,8 +66,78 @@ app.get('/GetImageForBar/:id', (req, res) => {
 
 //#endregion
 //action functions
+app.post('/RegisterUser',(req,res)=>{
+  var id = req.body.uuid;
+  var username = req.body.username
+  var password = req.body.password
+  var email = req.body.email
+
+  if (id == undefined) {
+    Output(false, "No uuid specified", res);
+    // Output(false,req.body,res);
+    return;
+  }
+  else if (username == undefined || password == undefined || email == undefined)
+  {
+    Output(false, "Invalid Register Information", res);
+    return;
+  }
+  else {    
+
+    var userPersonalizedQueryString = `SELECT personalized FROM users WHERE uuid=\"${id}\"`;
+    QueryDB(userPersonalizedQueryString).then(function (data) {
+      
+      if(data.length == 0)
+      {
+        Output(false, "user doesnt exist", res);
+        return
+      }
+      
+      if(data[0].personalized == true)
+      {
+        Output(false, "Account already created for user", res);
+        return
+      }
+      else
+      {
+        var queryString = `UPDATE users SET username=\"${username}\", password=\"${password}\",email=\"${email}\", personalized=1 WHERE uuid=\"${id}\"`;
+
+        QueryDB(queryString).then(function (data) {
+          Output(true, data, res);
+        }).catch(function (err) {
+          Output(false, err, res);
+        });
+      }
+
+    }).catch(function (err) {
+      Output(false, err, res);
+    });
+
+
+  }
+})
+
+app.post('/Login',(req,res)=>{
+  var username = req.body.username;
+  var password = req.body.password;
+
+  var userQueryString = `SELECT password FROM users WHERE username=\"${username}\"`;
+    QueryDB(userQueryString).then(function (data) {
+      if(data.length == 0)
+      {
+        Output(false, "Invalid Username", res);
+      }
+
+      if(data[0].password == password)
+      {
+        
+      }
+    })
+})
+
 app.post('/GenerateUser', (req, res) => {
   var id = req.body.uuid;
+  
   if (id == undefined) {
     Output(false, "No uuid specified", res);
     return;
