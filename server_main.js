@@ -128,31 +128,32 @@ app.post('/RegisterUser',async (req,res)=>{
   }  
 })
 
-app.post('/Login',(req,res)=>{
+app.post('/Login',async (req,res)=>{
   var username = req.body.username;
   var password = req.body.password;        
 
   var userQueryString = `SELECT password FROM users WHERE username=\"${username}\"`;
-    db.Query(userQueryString).then(function (data) {
-      if(data.length == 0)
-      {
-        Output(false, "Invalid Username", res);
-      }
+  try 
+  {
+    var userPasswordResult = await db.Query(userQueryString)
+    if(userPasswordResult.length == 0) //username doesnt exist
+    {
+      throw "Invalid Username"
+    }
+    
+    var correctPass = await bcrypt.compare(password, userPasswordResult[0].password)
 
-      bcrypt.compare(password, data[0].password)
-      .then(function(result) {
-        if(result)
-        {
-          Output(true, "Login Success", res);
-          return
-        }
-        else
-        {          
-          Output(false, "Invalid Password", res);
-          return
-        }
-      });      
-    })
+    if(!correctPass)
+    {
+      throw "Invalid Password"
+    }
+
+    Output(true, "Login Success", res);
+  }
+  catch(err)
+  {
+    Output(false, err, res);
+  }  
 })
 
 app.post('/GenerateUser', (req, res) => {
