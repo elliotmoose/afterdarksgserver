@@ -1,12 +1,21 @@
 const express = require('express')
 const bodyParse = require('body-parser')
+const bcrypt = require('bcrypt')
 const path = require('path')
 const app = express()
-const mysql = require('mysql');
-const fs = require('fs');
-const EXPIRY_PERIOD = 3600*24*2; //24 hours
 
-var con = ConnectDatabase();
+const mysql = require('mysql');
+var db = require('./database')
+
+const fs = require('fs');
+
+
+const EXPIRY_PERIOD = 3600*24*2; //24 hours
+const SALT_ROUNDS = 9;
+
+
+var con = db.Connect();
+
 
 //#region express
 app.use((request, response, next) => {
@@ -20,8 +29,6 @@ app.use(express.static(path.join(__dirname, "public")))
 app.use('/scripts', express.static(__dirname + '/node_modules'));
 //#endregion
 
-
-
 // Handles request to root only.
 app.get('/', (req, res) => {
   res.status(200);
@@ -32,7 +39,7 @@ app.get('/', (req, res) => {
 //#region Get Generic Data 
 //query functions
 app.get('/GetBarNames', (req, res) => {
-  QueryDB("SELECT * FROM bars_info").then(function (data) {
+  db.Query("SELECT * FROM bars_info").then(function (data) {
     Output(true, data, res);
   }).catch(function (err) {
     Output(false, err, res);
@@ -40,7 +47,7 @@ app.get('/GetBarNames', (req, res) => {
 });
 
 app.get('/GetDiscounts', (req, res) => {
-  QueryDB("SELECT * FROM discounts").then(function (data) {
+  db.Query("SELECT * FROM discounts").then(function (data) {
     Output(true, data, res);
   }).catch(function (err) {
     Output(false, err, res);
@@ -66,15 +73,14 @@ app.get('/GetImageForBar/:id', (req, res) => {
 
 //#endregion
 //action functions
-app.post('/RegisterUser',(req,res)=>{
+app.post('/RegisterUser',async (req,res)=>{
   var id = req.body.uuid;
   var username = req.body.username
   var password = req.body.password
   var email = req.body.email
 
   if (id == undefined) {
-    Output(false, "No uuid specified", res);
-    // Output(false,req.body,res);
+    Output(false, "No uuid specified", res);    
     return;
   }
   else if (username == undefined || password == undefined || email == undefined)
@@ -83,55 +89,69 @@ app.post('/RegisterUser',(req,res)=>{
     return;
   }
   else {    
+    var checkUsernameAvailableQueryString = `SELECT username FROM users WHERE username=\"${username}\"`
+    var username_check = await db.Query(checkUsernameAvailableQueryString)
+
+    if(username_check.length != 0)
+    {
+        Output(false,"Username already taken",res);
+        return        
+    }
 
     var userPersonalizedQueryString = `SELECT personalized FROM users WHERE uuid=\"${id}\"`;
-    QueryDB(userPersonalizedQueryString).then(function (data) {
-      
-      if(data.length == 0)
+    var usersPersonalizedResults = await db.Query(userPersonalizedQueryString)
+
+    var hashed_password = await bcrypt.hash(password, SALT_ROUNDS);
+    var dateBegin = Math.round(new Date().getTime() / 1000);
+    
+    try 
+    {
+      if(usersPersonalizedResults.length == 0 || usersPersonalizedResults[0].personalized == true) //if this uuid hasnt been registered / if it has been created on this device before
       {
-        Output(false, "user doesnt exist", res);
-        return
-      }
-      
-      if(data[0].personalized == true)
-      {
-        Output(false, "Account already created for user", res);
-        return
+        var insertAccountQueryString = `INSERT INTO users (id,uuid,username,password,email,personalized,wallet,date_begin) VALUES (0,'${id}','${username}','${hashed_password}','${email}',0,'[]',${dateBegin})`;        
+        var insertResults = await db.Query(insertAccountQueryString)      
+        Output(true, insertResults, res);
       }
       else
       {
-        var queryString = `UPDATE users SET username=\"${username}\", password=\"${password}\",email=\"${email}\", personalized=1 WHERE uuid=\"${id}\"`;
-
-        QueryDB(queryString).then(function (data) {
-          Output(true, data, res);
-        }).catch(function (err) {
-          Output(false, err, res);
-        });
+        var updateAccountsQueryString = `UPDATE users SET username=\"${username}\", password=\"${hashed_password}\",email=\"${email}\", personalized=1 WHERE uuid=\"${id}\"`;
+        var updateResults = await db.Query(updateAccountsQueryString)                
+        Output(true, updateResults, res);
       }
-
-    }).catch(function (err) {
-      Output(false, err, res);
-    });
-
-
-  }
+    }
+    catch(err)
+    {
+      console.log(`Register User Error: ${err}`)
+      Output(false, err, res);  
+      return
+    }    
+  }  
 })
 
 app.post('/Login',(req,res)=>{
   var username = req.body.username;
-  var password = req.body.password;
+  var password = req.body.password;        
 
   var userQueryString = `SELECT password FROM users WHERE username=\"${username}\"`;
-    QueryDB(userQueryString).then(function (data) {
+    db.Query(userQueryString).then(function (data) {
       if(data.length == 0)
       {
         Output(false, "Invalid Username", res);
       }
 
-      if(data[0].password == password)
-      {
-        
-      }
+      bcrypt.compare(password, data[0].password)
+      .then(function(result) {
+        if(result)
+        {
+          Output(true, "Login Success", res);
+          return
+        }
+        else
+        {          
+          Output(false, "Invalid Password", res);
+          return
+        }
+      });      
     })
 })
 
@@ -144,9 +164,9 @@ app.post('/GenerateUser', (req, res) => {
   }
   else {
     var dateBegin = Math.round(new Date().getTime() / 1000);
-    var queryString = "INSERT INTO users (id,uuid,username,password,personalized,wallet,date_begin) VALUES (0,'" + id + "','','',0,'[]'," + dateBegin + ")";
+    var queryString = `INSERT INTO users (id,uuid,username,password,email,personalized,wallet,date_begin) VALUES (0,'${id}','','','',0,'[]',${dateBegin})`;
 
-    QueryDB(queryString).then(function (data) {
+    db.Query(queryString).then(function (data) {
       Output(true, data, res);
     }).catch(function (err) {
       Output(false, err, res);
@@ -177,7 +197,7 @@ app.post('/AddDiscountToWalletForUser', (req, res) => {
   }
   else {
     var queryWallet = `SELECT wallet FROM users WHERE id='${user_id}'`;
-    QueryDB(queryWallet).then(function (data) {
+    db.Query(queryWallet).then(function (data) {
 
       if(data == [])
       {
@@ -213,7 +233,7 @@ app.post('/AddDiscountToWalletForUser', (req, res) => {
 
       //check if discount has run out
       var discountQueryString = `SELECT curAvailCount FROM discounts WHERE id=${discount_id}`;
-      QueryDB(discountQueryString).then(function (data) {
+      db.Query(discountQueryString).then(function (data) {
 
         var curAvailCount = data[0].curAvailCount;
 
@@ -232,11 +252,11 @@ app.post('/AddDiscountToWalletForUser', (req, res) => {
         wallet = JSON.stringify(wallet);
 
         var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id='${user_id}'`;
-        QueryDB(updateWalletString).then(function (data) { //update wallet
+        db.Query(updateWalletString).then(function (data) { //update wallet
           var reduceDiscountCounterString = `UPDATE discounts SET curAvailCount=${curAvailCount - 1} WHERE id='${discount_id}'`;
-          QueryDB(reduceDiscountCounterString).then(function (data) { //set new counter
+          db.Query(reduceDiscountCounterString).then(function (data) { //set new counter
             var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
-            QueryDB(getNewWalletString).then(function (data) { //get new wallet to return
+            db.Query(getNewWalletString).then(function (data) { //get new wallet to return
               let wallet = JSON.parse(data[0].wallet);
               Output(true, wallet, res);
               return;
@@ -263,7 +283,7 @@ app.post('/AddDiscountClaim', (req, res) => {
   }
   else {
     var queryWallet = `SELECT wallet FROM users WHERE id='${user_id}'`;
-    QueryDB(queryWallet).then(function (data) {
+    db.Query(queryWallet).then(function (data) {
 
       let wallet = JSON.parse(data[0].wallet);
 
@@ -280,11 +300,11 @@ app.post('/AddDiscountClaim', (req, res) => {
           var epoch = Math.round(new Date().getTime() / 1000);
 
           var discountClaimString = `INSERT INTO discount_claims (id,discount_id,user_id,date) values (0,${discount_id},${user_id},${epoch})`;
-          QueryDB(discountClaimString).then(function (data) { //add discount claim
+          db.Query(discountClaimString).then(function (data) { //add discount claim
             var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id=${user_id}`;
-            QueryDB(updateWalletString).then(function (data) { //update wallet            
+            db.Query(updateWalletString).then(function (data) { //update wallet            
               var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
-              QueryDB(getNewWalletString).then(function (data) { //get new wallet to return
+              db.Query(getNewWalletString).then(function (data) { //get new wallet to return
                 let wallet = JSON.parse(data[0].wallet);
                 Output(true, wallet, res);
                 return;
@@ -320,7 +340,7 @@ app.post('/GetWalletForUser', (req, res) => {
     //if expired, remove
 
     var walletOutput;
-    QueryDB("SELECT wallet FROM users WHERE id='" + id + "'").then(function (walletData) {
+    db.Query("SELECT wallet FROM users WHERE id='" + id + "'").then(function (walletData) {
       walletOutput = JSON.parse(walletData[0].wallet);
       
       var wallet = walletOutput.filter(CheckDiscountHasExpired);
@@ -331,7 +351,7 @@ app.post('/GetWalletForUser', (req, res) => {
       // console.log("wallet:" + wallet);
 
       var query = `UPDATE users SET wallet='${JSON.stringify(wallet)}' WHERE id=${id}`;
-      QueryDB(query).then(function (data) {        
+      db.Query(query).then(function (data) {        
         Output(true, wallet, res);
         return;
       });
@@ -353,29 +373,6 @@ function CheckDiscountHasExpired(discount)
 
 app.listen(8080)
 
-
-function ConnectDatabase() {
-  var con = mysql.createConnection({
-    host: "localhost",
-    user: "mooselliot",
-    password: "S9728155f",
-    database: "afterdarksg"
-  });
-
-  con.connect(function (err) {
-    if (err) throw err;
-    console.log("Connected to database");
-  });
-  // con.connect(function (err) {
-
-  //   if (err) {
-  //     Output(false, err, res);
-  //     return;
-  //   }
-  // });
-  return con;
-}
-
 // function Query(query, res) {
 
 //     con.query(query, function (err, result, fields) {
@@ -391,17 +388,7 @@ function ConnectDatabase() {
 
 // }
 
-function QueryDB(query) {
-  return new Promise(function (resolve, reject) {
 
-    con.query(query, function (err, result, fields) {
-      if (err) {
-        reject(err);
-      }
-      resolve(result);
-    });
-  });
-}
 
 
 function Output(success, output, res) {
