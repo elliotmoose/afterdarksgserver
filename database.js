@@ -23,9 +23,38 @@ module.exports.Select = function()
 
 }
 
-module.exports.Insert = function()
+module.exports.PreparedQuery = function(query,values){
+    return new Promise(function (resolve, reject) {
+      con.query(query,values, function (err, result, fields) {
+        if (err) {
+          reject(err);
+        }
+        resolve(result);
+      });
+    });
+  }
+
+module.exports.ParseObjectToKeyValues = function(obj)
 {
-  
+    var keyString = '('
+    var valueString = '('
+    for(let key in obj)
+    {
+        if(obj[key] === undefined || obj[key] === null)
+        {
+            continue
+        }
+        else
+        {
+            keyString += `${key},`
+            valueString += `${obj[key]},`
+        }
+    }
+
+    keyString = keyString.replace(/.$/,")")
+    valueString = valueString.replace(/.$/,")")
+
+    return {key : keyString, value : valueString}
 }
 
 
