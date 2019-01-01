@@ -1,3 +1,4 @@
+const MySQLDriver = require('mysqldriver');
 var mysql = require('mysql');
 
 var con;
@@ -16,6 +17,24 @@ module.exports.Connect = function() {
   });
   return con;
 }
+
+
+var DB;
+module.exports.ConnectWithDriver = function(){     
+    const config = {
+        host: "localhost",
+        user: "mooselliot",
+        password: "S9728155f",
+        database: "afterdarksg",
+        port: 3306
+    }
+
+    DB = new MySQLDriver(config);
+    console.log('connected to database')
+    return DB    
+}
+
+
 
 
 module.exports.Select = function()
@@ -68,3 +87,4 @@ module.exports.Query = function(query) {
     });
   });
 }
+

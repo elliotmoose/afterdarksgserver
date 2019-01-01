@@ -14,8 +14,8 @@ const EXPIRY_PERIOD = 3600 * 24 * 2; //24 hours
 const SALT_ROUNDS = 9;
 
 
-var con = db.Connect();
-
+// var con = db.Connect();
+const DB = db.ConnectWithDriver();
 
 //#region express
 app.use((request, response, next) => {
@@ -39,8 +39,9 @@ app.get('/', (req, res) => {
 //#region Get Generic Data 
 //query functions
 app.get('/GetBarNames', async (req, res) => {
-    try {
-        var barsResult = await db.Query("SELECT * FROM bars_info");
+    try {        
+        var barsResult = await DB.getRecords('bars_info'); 
+        // var barsResult = await db.Query("SELECT * FROM bars_info");        
         Output(true, barsResult, res);
     }
     catch (err) {
@@ -50,7 +51,7 @@ app.get('/GetBarNames', async (req, res) => {
 
 app.get('/GetDiscounts', async (req, res) => {
     try {
-        var discountsResult = await db.Query("SELECT * FROM discounts");
+        var discountsResult = await DB.getRecords('discounts'); 
         Output(true, discountsResult, res);
     }
     catch (err) {
@@ -92,8 +93,9 @@ app.post('/RegisterUser', async (req, res) => {
         return;
     }
     else {
-        var checkUsernameAvailableQueryString = `SELECT username FROM users WHERE username=\"${username}\"`;
-        var username_check = await db.Query(checkUsernameAvailableQueryString);
+        // var checkUsernameAvailableQueryString = `SELECT username FROM users WHERE username=\"${username}\"`;
+        var username_check = await DB.getRecords('users',{username : username}); 
+        // var username_check = await db.Query(checkUsernameAvailableQueryString);
 
         if (username_check.length != 0) {
             Output(false, "Username already taken", res);
@@ -131,9 +133,8 @@ app.post('/Login', async (req, res) => {
     var username = req.body.username;
     var password = req.body.password;
 
-    try {
-        var userQueryString = `SELECT password FROM users WHERE username=?`;
-        var userPasswordResult = await db.PreparedQuery(userQueryString,[username])
+    try {        
+        var userPasswordResult = await DB.getRecords('users',{username : username}); 
         if (userPasswordResult.length == 0) //username doesnt exist
         {
             throw "Invalid Username"
@@ -162,15 +163,13 @@ app.post('/FacebookLogin', async (req, res) => {
     var dateBegin = Math.round(new Date().getTime() / 1000);
 
     try {
-        var userQueryString = `SELECT * FROM facebook_users WHERE id=${id}`;
-        var userResult = await db.Query(userQueryString)
+        var userResult = await DB.getRecords('facebook_users',{id : id});         
         
         if (userResult.length != 0) //Login
         {
             if(userResult[0].email != email)
             {
-                var updateUserEmailString = `UPDATE facebook_users SET email=? WHERE id=?`
-                await db.PreparedQuery(updateUserEmailString,[email,id])
+                await DB.updateRecords('facebook_users',{email : email},{id : id})                
                 console.log(`Updating email from ${userResult[0].email} to ${email}`)                
             }
 
@@ -179,8 +178,9 @@ app.post('/FacebookLogin', async (req, res) => {
         }
         else //User does not exist, generate an account
         {            
-            var createUserQueryString = `INSERT INTO facebook_users (id,email,name,age,gender,date_begin) VALUES (?,?,?,?,?,?)`;
-            await db.PreparedQuery(createUserQueryString,[id,email,name,age,gender,dateBegin])
+            // var createUserQueryString = `INSERT INTO facebook_users (id,email,name,age,gender,date_begin) VALUES (?,?,?,?,?,?)`;
+            await DB.insertRecord('facebook_users',{id : id, email : email, name : name, age : age, gender : gender, date_begin : dateBegin})
+            // await db.PreparedQuery(createUserQueryString,[id,email,name,age,gender,dateBegin])
             console.log('Facebook User Created')
             Output(true,"New Facebook User Created Successfully", res);
         }
@@ -210,15 +210,15 @@ app.post('/GenerateUser', (req, res) => {
     }
 });
 
-app.post('/RetrieveUser', (req, res) => {
+app.post('/RetrieveUser', async (req, res) => {
     var id = req.body.uuid;
     if (id == undefined) {
         Output(false, "No uuid specified", res);
         return;
     }
-    else {
-        var queryString = "SELECT * FROM users WHERE uuid='" + id + "'";
-        Query(queryString, res);
+    else {        
+        var results = await DB.getRecords('users',{uuid:id}); 
+        Output(true, results, res);
     }
 });
 

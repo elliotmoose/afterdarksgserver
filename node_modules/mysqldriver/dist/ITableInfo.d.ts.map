@@ -1,0 +1,1 @@
+{"version":3,"file":"ITableInfo.d.ts","sourceRoot":"","sources":["../src/ITableInfo.ts"],"names":[],"mappings":"AAAA,MAAM,WAAW,UAAU;IACvB,WAAW,EAAE,MAAM,CAAA;IACnB,SAAS,EAAE,MAAM,CAAA;IACjB,UAAU,EAAE,MAAM,CAAA;IAClB,wBAAwB,EAAE,MAAM,CAAA;IAChC,WAAW,EAAE,MAAM,CAAA;IACnB,cAAc,CAAC,EAAE,MAAM,CAAA;CAC1B"}

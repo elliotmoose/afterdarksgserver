@@ -1,0 +1,1 @@
+{"version":3,"file":"Interfaces.d.ts","sourceRoot":"","sources":["../src/Interfaces.ts"],"names":[],"mappings":"AAAA,OAAO,EAAC,OAAO,EAAC,MAAM,sBAAsB,CAAC;AAC7C,OAAO,EAAC,eAAe,EAAC,MAAM,8BAA8B,CAAC;AAC7D,OAAO,EAAC,kBAAkB,EAAC,MAAM,iCAAiC,CAAC;AACnE,OAAO,EAAC,aAAa,EAAC,MAAM,4BAA4B,CAAA;AACxD,OAAO,EACH,OAAO,EACP,eAAe,EACf,aAAa,EACb,kBAAkB,EACrB,CAAA"}

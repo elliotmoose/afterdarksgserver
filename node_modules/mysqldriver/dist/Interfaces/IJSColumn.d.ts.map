@@ -1,0 +1,1 @@
+{"version":3,"file":"IJSObjectFieldInfo.d.ts","sourceRoot":"","sources":["../../src/interfaces/IJSObjectFieldInfo.ts"],"names":[],"mappings":"AAAA,MAAM,WAAW,SAAS;IACtB,WAAW,EAAE,MAAM,CAAC;IACpB,SAAS,EAAE,MAAM,CAAC;IAClB,GAAG,EAAE,MAAM,CAAC;IACZ,UAAU,EAAE,MAAM,CAAC;IACnB,WAAW,EAAE,MAAM,CAAA;IACnB,aAAa,CAAC,EAAE,MAAM,CAAA;CACzB"}
