@@ -3,6 +3,7 @@ const bodyParse = require('body-parser')
 const bcrypt = require('bcrypt')
 const path = require('path')
 const app = express()
+const adstripe = require('./afterdark_stripe')
 
 const mysql = require('mysql');
 var db = require('./database')
@@ -134,20 +135,23 @@ app.post('/Login', async (req, res) => {
     var password = req.body.password;
 
     try {        
-        var userPasswordResult = await DB.getRecords('users',{username : username}); 
-        if (userPasswordResult.length == 0) //username doesnt exist
+        var userDataResults = await DB.getRecords('users',{username : username}); 
+        if (userDataResults.length == 0) //username doesnt exist
         {
             throw "Invalid Username"
         }
 
-        var correctPass = await bcrypt.compare(password, userPasswordResult[0].password)
+        var correctPass = await bcrypt.compare(password, userDataResults[0].password)
 
         if (!correctPass) {
             throw "Invalid Password"
         }
 
         console.log(`USER LOGGED IN: ${username}`);
-        Output(true, "Login Success", res);
+
+        let userData = userDataResults[0]
+        userData.password = undefined
+        Output(true, userData, res);
     }
     catch (err) {
         Output(false, err, res);
@@ -163,34 +167,132 @@ app.post('/FacebookLogin', async (req, res) => {
     var dateBegin = Math.round(new Date().getTime() / 1000);
 
     try {
-        var userResult = await DB.getRecords('facebook_users',{id : id});         
+        var userResult = await DB.getRecord('facebook_users',{id : id});         
         
-        if (userResult.length != 0) //Login
+        if (userResult !== undefined) //User exists, logging in
         {
-            if(userResult[0].email != email)
+            let existingADUser = await DB.getRecord('users',{email : email})
+            if(userResult.email != email) //user has id, but email mismatches with fb db. meaning user changed email
             {
-                await DB.updateRecords('facebook_users',{email : email},{id : id})                
-                console.log(`Updating email from ${userResult[0].email} to ${email}`)                
+                //we then want to help user update. but we need to also check if the email has been used to create another afterdark user account
+                
+                if(existingADUser !== undefined) //there exists a user with that email already
+                {
+                    Output(false, 'It seems your Facebook email has changed. The new email has already been used to create an Afterdark account.',res)
+                    return
+                }
+                else
+                {
+                    await DB.updateRecords('facebook_users',{email : email},{id : id})                
+                    console.log(`Updating email from ${userResult.email} to ${email}`)                
+                }                
             }
 
             console.log('Facebook User Logged In')
-            Output(true, "Login Success", res);
+            Output(true, existingADUser, res);
         }
         else //User does not exist, generate an account
-        {            
-            // var createUserQueryString = `INSERT INTO facebook_users (id,email,name,age,gender,date_begin) VALUES (?,?,?,?,?,?)`;
-            await DB.insertRecord('facebook_users',{id : id, email : email, name : name, age : age, gender : gender, date_begin : dateBegin})
-            // await db.PreparedQuery(createUserQueryString,[id,email,name,age,gender,dateBegin])
+        {   
+            let userWithSameEmail = await DB.getRecord('users',{email: email})
+
+            if(userWithSameEmail !== undefined)
+            {
+                Output(false,"Your Facebook email has already been used to create an account",res)
+                return
+            }
+
+            await DB.insertRecord('users', {email : email,gender : gender, age : age})
+            let newUserData = await DB.getRecord('users',{email : email});         
+            await DB.insertRecord('facebook_users',{id : id,afterdark_id: newUserData.id, email : email, name : name, age : age, gender : gender, date_begin : dateBegin})                        
             console.log('Facebook User Created')
-            Output(true,"New Facebook User Created Successfully", res);
+
+            Output(true,newUserData, res);
         }
         
     }
     catch (err) {
+        console.log(err)
         Output(false, err, res);
     }
 })
 
+
+
+app.post('/RetrieveCustomer',  async (req,res) => {
+    let ad_userid = req.body.id;
+    let token = req.body.token;
+    let email = req.body.email;
+
+    //step 1: check if user has a customer
+    let ad_customer = await DB.getRecord('stripe_customers',{afterdark_id : ad_userid})
+
+    //step 2a: if has, return customer id
+    if(ad_customer !== undefined)
+    {
+        let customer_id = ad_customer.stripe_customer_id;
+        Output(true, customer_id, res);
+    }
+    else //step 2b: if not, create customer
+    {
+        let customer = await adstripe.createCustomer(email, token);        
+
+        try 
+        {
+            await DB.insertRecord('stripe_customers',{afterdark_id : ad_userid, stripe_customer_id: customer.id})
+        }
+        catch(e)
+        {
+            Output(false,e,res)
+        }        
+    }    
+})
+
+app.post('/Register', async (req,res) => {
+    let username = req.body.username
+    let password = req.body.password
+    let email = req.body.email
+    let gender = req.body.gender == "male" ? 1 : req.body.gender == "female" ? 2 : undefined
+    let age = req.body.age
+    let dateBegin = Math.round(new Date().getTime() / 1000);
+    
+
+    try 
+    {        
+        let usernameRecords = await DB.getRecord('users',{username : username})
+
+        if(usernameRecords === undefined)
+        {
+            let emails = await DB.getRecord('users',{email : email})
+            let emailsFB = await DB.getRecord('facebook_users',{email : email})
+
+            if(emails === undefined && emailsFB === undefined)
+            {
+                console.log('signing up new user');
+                console.log({username : username, password : password, email : email,gender : gender, age : age})
+                await DB.insertRecord('users',{username : username, password : password, email : email,gender : gender, age : age, date_begin : dateBegin})
+                let userData = await DB.getRecord('users',{username : username})
+                userData.password = undefined
+                Output(true,userData,res)
+            }
+            else
+            {
+                Output(false,'Email already exists',res)
+            }
+        }
+        else
+        {
+            Output(false,'Username already taken',res)
+        }
+    }
+    catch(e)
+    {
+        console.log(e)
+        Output(false,e,res)
+    }
+})
+
+
+//Legacy
 app.post('/GenerateUser', (req, res) => {
     var id = req.body.uuid;
 
@@ -403,26 +505,10 @@ function CheckDiscountHasExpired(discount) {
     return (epoch - discount.expiry) < 3600 * 24 * 2;
 }
 
-
 app.listen(8080)
 
-// function Query(query, res) {
-
-//     con.query(query, function (err, result, fields) {
-
-//       if (err) {
-//         Output(false, err, res);
-//         return;
-//       }
-
-//       Output(true, result, res);
-//       return;
-//     });
-
-// }
-
 function Output(success, message, res) {
-    var response = { success: success, message: message };
+    var response = { success: success, output: message };
     res.status(200);
     res.send(response);
 }
