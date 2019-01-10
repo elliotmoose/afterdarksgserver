@@ -39,11 +39,10 @@ app.get('/', (req, res) => {
 
 //#region Get Generic Data 
 //query functions
-app.get('/GetBarNames', async (req, res) => {
+app.get('/GetMerchants', async (req, res) => {
     try {        
-        var barsResult = await DB.getRecords('bars_info'); 
-        // var barsResult = await db.Query("SELECT * FROM bars_info");        
-        Output(true, barsResult, res);
+        var merchantsResult = await DB.getRecords('merchants'); 
+        Output(true, merchantsResult, res);
     }
     catch (err) {
         Output(false, err, res);
@@ -60,14 +59,38 @@ app.get('/GetDiscounts', async (req, res) => {
     }
 });
 
-app.get('/GetImageForBar/:id', (req, res) => {
+app.get('/GetTickets', async (req, res) => {
+    
+    let merchant_id = req.query.merchant_id;
+
+    //get tickets linked to ticket_meta
+    
+    try {        
+        //get events linked to merchant
+        let events = await DB.getRecords('events',{merchant_id: merchant_id});
+        
+        //get ticket_meta s linked to event
+        for(let event of events)
+        {        
+            let tickets = await DB.getRecords('tickets_meta',{event_id : event.id});
+            event.tickets = tickets;
+        }
+
+        Output(true, events, res);
+    }
+    catch (err) {
+        Output(false, err, res);
+    }
+});
+
+app.get('/GetImageForMerchant/:id', (req, res) => {
     var id = req.params.id;
 
     if (id == undefined) {
-        Output(false, "No bar id specified", res);
+        Output(false, "No merchant id specified", res);
     }
 
-    var imagePath = path.resolve(__dirname, "bar_images/" + id + "/0.jpg");
+    var imagePath = path.resolve(__dirname, "merchant_images/" + id + "/0.jpg");
 
     if (fs.existsSync(imagePath)) {
         res.sendFile(imagePath);
@@ -201,7 +224,7 @@ app.post('/FacebookLogin', async (req, res) => {
                 return
             }
 
-            await DB.insertRecord('users', {email : email,gender : gender, age : age})
+            await DB.insertRecord('users', {email : email,gender : gender, age : age, date_begin : dateBegin})
             let newUserData = await DB.getRecord('users',{email : email});         
             await DB.insertRecord('facebook_users',{id : id,afterdark_id: newUserData.id, email : email, name : name, age : age, gender : gender, date_begin : dateBegin})                        
             console.log('Facebook User Created')
@@ -215,7 +238,6 @@ app.post('/FacebookLogin', async (req, res) => {
         Output(false, err, res);
     }
 })
-
 
 
 app.post('/RetrieveCustomer',  async (req,res) => {
@@ -290,6 +312,189 @@ app.post('/Register', async (req,res) => {
         Output(false,e,res)
     }
 })
+
+app.post('/CreateTicket', async (req,res) => {
+    let name = req.body.name;
+    let description = req.body.description;
+    let count = req.body.count;
+    let price = req.body.price;
+    let event_id = req.body.event_id;
+    let dateCreated = Math.round(new Date().getTime() / 1000);    
+
+    try     
+    {
+        CheckRequiredFields({
+            name : name,
+            description : description,
+            count : count,
+            price : price,
+            event_id : event_id,
+        })
+
+        let checkEvent = await DB.getRecord('events',{id : event_id})
+
+        if(checkEvent === undefined)
+        {
+            Output(false,'The event you are trying to create a ticket for does not exist',res)
+        }
+
+        let ticket_meta = await DB.insertRecord('tickets_meta',{
+            name : name,
+            description : description,
+            event_id : event_id,
+            date_created : dateCreated
+        });
+
+        let meta_id = ticket_meta.insertId;
+        for(let i=0;i<count;i++)
+        {
+            await DB.insertRecord('tickets',
+            {
+                name : name,
+                description : description,
+                meta_id: meta_id,
+                price : price,
+                status : 'available',
+                date_created : dateCreated
+            })
+        }
+
+        Output(true,ticket_meta,res)
+    }
+    catch(error)
+    {
+        console.log(error)
+        Output(false,error,res)
+    }
+})
+
+app.post('/DeleteEvent', async (req,res) => {    
+    let event_id = req.body.event_id;
+
+    try 
+    {
+        let getEvent = await DB.getRecord('events',{id : event_id});
+    
+        if(getEvent === undefined)
+        {
+            throw "The event does not exist";
+        }
+
+        let metas = await DB.getRecords('tickets_meta',{event_id : event_id});
+
+        if(metas.length !== 0)
+        {
+            for(let meta of metas)
+            {
+                await DB.deleteRecords('tickets',{meta_id : meta.id});
+            }
+        }
+
+        await DB.deleteRecords('tickets_meta',{event_id : event_id});
+        await DB.deleteRecords('events',{id : event_id});
+
+        Output(true,'Deleted',res);
+    }
+    catch(err)
+    {
+        console.log(err)
+        Output(false,err,res)
+    }
+})
+
+
+app.post('/DeleteTicket', async (req,res)=>{
+    
+    let ticket_meta_id = req.body.meta_id;
+    try 
+    {
+        await DB.deleteRecords('tickets_meta',{id : ticket_meta_id})
+        await DB.deleteRecords('tickets',{meta_id : ticket_meta_id})
+        Output(true,'Deleted',res)
+    }
+    catch(err)
+    {
+        console.log(err)
+        Output(false,err,res)
+    }
+})
+
+
+app.post('/AllocateTicket', async (req,res) => {
+    let owner_id = req.body.owner_id;
+    let ticket_meta_id = req.body.ticket_meta_id;
+    let transaction_token = req.body.transaction_token;
+
+    try 
+    {
+        //check owner exists
+        let user = await DB.getRecord('users',{id : owner_id});
+
+        if(user === undefined)
+        {
+            Output(false,'User does not exist',res);
+            return
+        }
+
+        //check ticket availability
+        let tickets = await DB.getRecords('tickets',{meta_id : ticket_meta_id, status : 'available'})
+
+        if(tickets.length === 0)
+        {
+            Output(false,'There are no more such tickets available',res);
+            return
+        }
+
+        //allocate ticket 
+        let output = await DB.updateRecords('tickets',{status : 'allocated', owner_id : owner_id},{id : tickets[0].id})
+        
+        if(output !== undefined)
+        {
+            Output(true,output,res)
+        }
+        else
+        {
+            Output(true,'Allocation failed at updating ticket owner',res);
+        }
+    }
+    catch(error)
+    {
+        console.log(error)
+        Output(false,error,res)
+    }
+
+    
+})
+
+app.post('/CreateEvent', async (req,res) => {
+    let name = req.body.name;
+    let merchant_id = req.body.merchant_id;
+    let location = req.body.location;
+    let date = req.body.date;
+    let time = req.body.time;
+    let dateCreated = Math.round(new Date().getTime() / 1000);
+
+    try 
+    {
+        let merchant = await DB.getRecord('merchants',{id : merchant_id})
+        
+        if(merchant === undefined)
+        {
+            throw "Merchant does not exist"
+        }
+
+        let output = await DB.insertRecord('events',{name : name,merchant_id : merchant_id,location : location, time: time, date : date, created: dateCreated})        
+        Output(true,output,res)
+    }
+    catch(error)
+    {
+        console.log(error)
+        Output(false,error,res)
+    }
+})
+
+
+
 
 
 //Legacy
@@ -511,4 +716,15 @@ function Output(success, message, res) {
     var response = { success: success, output: message };
     res.status(200);
     res.send(response);
+}
+
+function CheckRequiredFields(object)
+{
+    for(var key in object)
+    {
+        if(object[key] === undefined || object[key] === null)
+        {
+            throw `Required value missing: ${key}`
+        }
+    }
 }
