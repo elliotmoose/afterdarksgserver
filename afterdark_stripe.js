@@ -10,11 +10,32 @@ module.exports.createCustomer = async (email, source_token) => {
         source : source_token
     })
 
-    return customer
+    return customer;
 }
 
 module.exports.retrieveCustomer = async (customer_id) => {
-    return stripe.customers.retrieveCustomer(customer_id)
+    return stripe.customers.retrieve(`${customer_id}`)
+}
+
+module.exports.addSourceToCustomer = async (customer_id, card_token) => {
+    let response = await stripe.customers.createSource(
+        customer_id,
+        { 
+            source: card_token
+        }
+    );
+
+    return response;
+}
+
+
+module.exports.removeSourceFromCustomer = async (customer_id, card_id) => {
+    let response = await stripe.customers.deleteCard(
+        customer_id,
+        card_id
+    );
+
+    return response;
 }
 
 // return stripe.customers.create({

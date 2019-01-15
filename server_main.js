@@ -12,7 +12,7 @@ const fs = require('fs');
 
 
 const EXPIRY_PERIOD = 3600 * 24 * 2; //24 hours
-const SALT_ROUNDS = 9;
+const SALT_ROUNDS = 10;
 
 
 // var con = db.Connect();
@@ -59,21 +59,39 @@ app.get('/GetDiscounts', async (req, res) => {
     }
 });
 
-app.get('/GetTickets', async (req, res) => {
+app.get('/GetEvents', async (req, res) => {
     
-    let merchant_id = req.query.merchant_id;
+    // let merchant_id = req.query.merchant_id;
 
     //get tickets linked to ticket_meta
     
     try {        
         //get events linked to merchant
-        let events = await DB.getRecords('events',{merchant_id: merchant_id});
+        // let events = await DB.getRecords('events',{merchant_id: merchant_id});
+        let events = await DB.getRecords('events');
         
         //get ticket_meta s linked to event
         for(let event of events)
         {        
             let tickets = await DB.getRecords('tickets_meta',{event_id : event.id});
             event.tickets = tickets;
+
+            for(let ticket of tickets)
+            {
+                let available = await DB.query('SELECT COUNT(*) FROM tickets WHERE meta_id=? AND status=\'available\'',[ticket.id]);
+                let total = await DB.query('SELECT COUNT(*) FROM tickets WHERE meta_id=?',[ticket.id]);
+
+                if(available.length === 0 || total.length === 0)
+                {
+                    ticket.count = 0 
+                    ticket.total = 0 
+                }
+                else
+                {
+                    ticket.count = available[0]["COUNT(*)"];
+                    ticket.total = total[0]["COUNT(*)"];
+                }
+            }
         }
 
         Output(true, events, res);
@@ -93,9 +111,11 @@ app.get('/GetImageForMerchant/:id', (req, res) => {
     var imagePath = path.resolve(__dirname, "merchant_images/" + id + "/0.jpg");
 
     if (fs.existsSync(imagePath)) {
+        // console.log(`image for: ${id}`)
         res.sendFile(imagePath);
     }
     else {
+        // console.log(`no image for: ${id}`)
         Output(false, `image does not exist for this id ${id}`, res);
     }
 });
@@ -165,6 +185,11 @@ app.post('/Login', async (req, res) => {
         }
 
         var correctPass = await bcrypt.compare(password, userDataResults[0].password)
+
+        console.log(password);
+        console.log(userDataResults[0].password)
+
+        console.log(correctPass)
 
         if (!correctPass) {
             throw "Invalid Password"
@@ -298,12 +323,12 @@ app.post('/Register', async (req,res) => {
             }
             else
             {
-                Output(false,'Email already exists',res)
+                throw 'Email already exists';
             }
         }
         else
         {
-            Output(false,'Username already taken',res)
+            throw 'Username already taken';
         }
     }
     catch(e)
@@ -335,7 +360,7 @@ app.post('/CreateTicket', async (req,res) => {
 
         if(checkEvent === undefined)
         {
-            Output(false,'The event you are trying to create a ticket for does not exist',res)
+            throw 'The event you are trying to create a ticket for does not exist';
         }
 
         let ticket_meta = await DB.insertRecord('tickets_meta',{
@@ -432,8 +457,7 @@ app.post('/AllocateTicket', async (req,res) => {
 
         if(user === undefined)
         {
-            Output(false,'User does not exist',res);
-            return
+            throw 'User does not exist';
         }
 
         //check ticket availability
@@ -441,8 +465,7 @@ app.post('/AllocateTicket', async (req,res) => {
 
         if(tickets.length === 0)
         {
-            Output(false,'There are no more such tickets available',res);
-            return
+            throw 'There are no more such tickets available';
         }
 
         //allocate ticket 
@@ -454,7 +477,7 @@ app.post('/AllocateTicket', async (req,res) => {
         }
         else
         {
-            Output(true,'Allocation failed at updating ticket owner',res);
+            throw 'Allocation failed at updating ticket owner';
         }
     }
     catch(error)
@@ -494,6 +517,111 @@ app.post('/CreateEvent', async (req,res) => {
 })
 
 
+app.post('/AddPaymentMethod', async (req,res)=>{
+    let card_token = req.body.token;
+    let user_id = req.body.user_id;
+
+    //find out if user is already a stripe customer
+    try 
+    {
+        CheckRequiredFields({card_token: card_token, user_id: user_id});
+
+        let customer = await DB.getRecord('stripe_customers',{afterdark_id : user_id})
+        if(customer === undefined)
+        {
+            console.log('Creating new customer...')
+            //create customer
+            let user = await DB.getRecord('users',{id: user_id})
+
+            
+            if(user === undefined || user.email === undefined || user.email === null)
+            {
+                console.log(`no user with id ${user_id}`)
+                throw 'User does not exist'
+            }
+
+            let customer = await adstripe.createCustomer(user.email,card_token);
+            let newCustomerResponse = await DB.insertRecord('stripe_customers',{afterdark_id: user_id, stripe_customer_id: customer.id})
+            let stripe_customer_data = await adstripe.retrieveCustomer(cus_token);
+            Output(true,stripe_customer_data,res);
+        }
+        else
+        {
+            console.log('Adding source to customer...')
+            //add source
+            let cus_token = customer.stripe_customer_id;
+
+            if(cus_token === undefined || cus_token === null)
+            {
+                throw 'Database inconsistency: the stripe customer cannot be found. Please contact support'
+            }
+
+            let response = await adstripe.addSourceToCustomer(cus_token,card_token);
+            let stripe_customer_data = await adstripe.retrieveCustomer(cus_token);
+            Output(true, stripe_customer_data,res);
+        }
+    }
+    catch(error)
+    {
+        console.log(error);
+        Output(false,error,res);
+    }    
+})
+
+app.post('/RemovePaymentMethod', async (req,res)=>{
+    let card_id = req.body.card_id;
+    let user_id = req.body.user_id;
+
+    //find out if user is already a stripe customer
+    try 
+    {
+        CheckRequiredFields({card_id: card_id, user_id: user_id});
+
+        let customer = await DB.getRecord('stripe_customers',{afterdark_id : user_id})
+        let user = await DB.getRecord('users',{id: user_id})
+        
+        if(customer === undefined || user === undefined || user.email === undefined || user.email === null)
+        {
+            console.log(`no user with id ${user_id}`)
+            throw 'User does not exist'
+        }
+
+        let cus_id = customer.stripe_customer_id;
+
+        let response = await adstripe.removeSourceFromCustomer(cus_id,card_id);
+        let stripe_customer_data = await adstripe.retrieveCustomer(customer.stripe_customer_id);
+        Output(true, stripe_customer_data,res);        
+    }
+    catch(error)
+    {
+        console.log(error);
+        Output(false,error,res);
+    }    
+})
+
+app.post('/RetrieveStripeCustomer', async (req,res) => {
+    
+    let user_id = req.body.user_id;
+
+    try 
+    {
+        CheckRequiredFields({user_id : user_id});
+        let user = await DB.getRecord('stripe_customers',{afterdark_id: user_id})
+        
+        if(user === undefined)
+        {
+            throw 'User is not a stripe customer'
+        }
+
+        let customer = await adstripe.retrieveCustomer(user.stripe_customer_id);
+        Output(true,customer,res);
+    }
+    catch(error)
+    {
+        console.log(error)
+        Output(false,error,res);
+    }    
+})
 
 
 
