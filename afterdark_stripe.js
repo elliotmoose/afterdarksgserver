@@ -38,6 +38,14 @@ module.exports.removeSourceFromCustomer = async (customer_id, card_id) => {
     return response;
 }
 
+module.exports.makeDefaultSource = async (customer_id,card_id) => {    
+    let response = await stripe.customers.update(customer_id, {
+        default_source: card_id
+    });
+
+    return response;
+}
+
 // return stripe.customers.create({
 //     email: 'YOUR_EMAILtest@test.com',
 //     source: req.body.tokenId

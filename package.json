@@ -27,6 +27,7 @@
     "bcrypt": "^3.0.2",
     "body-parser": "^1.18.3",
     "express": "^4.16.3",
+    "jsonwebtoken": "^8.4.0",
     "mysql": "^2.15.0",
     "mysqldriver": "^3.0.7",
     "stripe": "^6.20.0"
