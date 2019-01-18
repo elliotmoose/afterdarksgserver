@@ -1,49 +1,103 @@
-const token = false ? 'sk_live_vvEQ4kyBLXF9wpESXRQ9C0dH' : 'sk_test_7Qayj2QSF28xVOlDnP5AcqAd';
+const token = false ? 'sk_live_cHSmPEmRtoLDHtMmva84qH48' : 'sk_test_ZnonTx9hyHKYUZPc3i0xogKU';
 
 var stripe = require('stripe')(token);
 
 
 
 module.exports.createCustomer = async (email, source_token) => {
-    let customer = await stripe.customers.create({
-        email : email,
-        source : source_token
-    })
-
-    return customer;
+    try 
+    {
+        let customer = await stripe.customers.create({
+            email : email,
+            source : source_token
+        })
+    
+        return customer;
+    }
+    catch(error)
+    {
+        throw 'Could not connect to stripe'
+    }    
 }
 
 module.exports.retrieveCustomer = async (customer_id) => {
-    return stripe.customers.retrieve(`${customer_id}`)
+    try 
+    {
+        let response = await stripe.customers.retrieve(`${customer_id}`)
+        return response
+    }
+    catch(error)
+    {
+        throw 'Could not connect to stripe'
+    }    
 }
 
 module.exports.addSourceToCustomer = async (customer_id, card_token) => {
-    let response = await stripe.customers.createSource(
-        customer_id,
-        { 
-            source: card_token
-        }
-    );
-
-    return response;
+    try 
+    {        
+        let response = await stripe.customers.createSource(
+            customer_id,
+            { 
+                source: card_token
+            }
+        );
+    
+        return response;
+    }
+    catch(error)
+    {
+        console.log(error)
+        throw 'Could not connect to stripe'
+    }    
 }
 
-
 module.exports.removeSourceFromCustomer = async (customer_id, card_id) => {
-    let response = await stripe.customers.deleteCard(
-        customer_id,
-        card_id
-    );
-
-    return response;
+    try 
+    {
+        let response = await stripe.customers.deleteCard(
+            customer_id,
+            card_id
+        );
+    
+        return response;
+    }
+    catch(error)
+    {
+        throw 'Could not connect to stripe'
+    }   
 }
 
 module.exports.makeDefaultSource = async (customer_id,card_id) => {    
-    let response = await stripe.customers.update(customer_id, {
-        default_source: card_id
-    });
+    try 
+    {
+        let response = await stripe.customers.update(customer_id, {
+            default_source: card_id
+        });
+    
+        return response;
+    }
+    catch(error)
+    {
+        throw 'Could not connect to stripe'
+    }   
+}
 
-    return response;
+module.exports.charge = async (customer_id,amount) => {
+    try 
+    {
+        let response = await stripe.charges.create({
+            amount: amount,
+            currency: "sgd",
+            customer: customer_id,    
+        })
+        
+        console.log(response);
+        return response
+    } 
+    catch (error) {
+        
+        return {error}
+    }
 }
 
 // return stripe.customers.create({

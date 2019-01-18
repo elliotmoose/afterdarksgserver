@@ -26,7 +26,8 @@ app.get('/', (req, res) => {
 });
 
 
-//#region get generic data 
+
+//#region Get Generic Data 
 app.get('/GetMerchants', async (req, res) => {
     try {        
         var merchantsResult = await DB.getRecords('merchants'); 
@@ -105,29 +106,7 @@ app.get('/GetImageForMerchant/:id', (req, res) => {
 
 //#endregion
 
-//#region get user data
-app.post('/GetWalletForUser', verifyToken, async (req, res) => {
-    let user_id = req.user_id;
-    try 
-    {
-        let tickets = await DB.getRecords('tickets',{owner_id: user_id});        
-        // let discounts = await DB.getRecords('discounts',{owner_id: user_id});
-
-        let output = {
-            tickets: tickets,
-            discounts : []
-        }
-
-        Output(true,output,res)
-    } 
-    catch (error) {
-        Output(false,error,res);
-    }
-});
-
-//#endregion
-
-//#region user creation and authentication
+//#region User creation and Authentication
 app.post('/Login', async (req, res) => {
     var username = req.body.username;
     var password = req.body.password;
@@ -439,14 +418,13 @@ app.post('/CreateEvent', async (req,res) => {
 
 //#endregion
 
-app.post('/PurchaseTicket', verifyToken, async (req,res) => {
-    let owner_id = req.user_id;
+app.post('/AllocateTicket', async (req,res) => {
+    let owner_id = req.body.owner_id;
     let ticket_meta_id = req.body.ticket_meta_id;
     let transaction_token = req.body.transaction_token;
 
     try 
     {
-        CheckRequiredFields({owner_id,ticket_meta_id});
         //check owner exists
         let user = await DB.getRecord('users',{id : owner_id});
 
@@ -463,41 +441,16 @@ app.post('/PurchaseTicket', verifyToken, async (req,res) => {
             throw 'There are no more such tickets available';
         }
 
-        //purchase
-        // - get stripe customer from adUser_id
-        // - create charge for this customer
-        // - on success, allocate ticket
-        let customer = await DB.getRecord('stripe_customers',{afterdark_id : owner_id});
-        if(customer === undefined)
-        {
-            throw 'User is not a stripe customer'
-        }
-
-        let customer_id = customer.stripe_customer_id;
-        let ticket_to_purchase = tickets[0];
-        let ticket_chargeable = ticket_to_purchase.price + ticket_to_purchase.tx_fee;
+        //allocate ticket 
+        let output = await DB.updateRecords('tickets',{status : 'allocated', owner_id : owner_id},{id : tickets[0].id})
         
-        console.log(`Charging ${ticket_chargeable} to ${customer_id} for ticket: ${ticket_to_purchase.id}`);
-        let response = await adstripe.charge(customer_id,ticket_chargeable)
-
-        if(!response.error)
+        if(output !== undefined)
         {
-            //allocate ticket 
-            let output = await DB.updateRecords('tickets',{status : 'allocated', owner_id : owner_id},{id : ticket_to_purchase.id})
-            
-            if(output !== undefined)
-            {
-                Output(true,response,res)
-            }
-            else
-            {
-                throw 'Allocation failed at updating ticket owner';
-            }
+            Output(true,output,res)
         }
         else
         {
-            console.log(response.error);
-            Output(false,'The ticket could not be purchased at this time',res);
+            throw 'Allocation failed at updating ticket owner';
         }
     }
     catch(error)
@@ -646,8 +599,6 @@ app.post('/RetrieveStripeCustomer',verifyToken,  async (req,res) => {
     }    
 })
 
-//#endregion
-
 async function verifyToken(req,res,next)
 {
     let token = req.headers.authorization;
@@ -671,6 +622,264 @@ async function verifyToken(req,res,next)
     next();
 }
 
+//#endregion
+
+//Legacy
+app.post('/RegisterUser', async (req, res) => {
+    var id = req.body.uuid;
+    var username = req.body.username;
+    var password = req.body.password;
+    var email = req.body.email;
+
+    if (id == undefined) {
+        Output(false, "No uuid specified", res);
+        return;
+    }
+    else if (username == undefined || password == undefined || email == undefined) {
+        Output(false, "Invalid Register Information", res);
+        return;
+    }
+    else {
+        // var checkUsernameAvailableQueryString = `SELECT username FROM users WHERE username=\"${username}\"`;
+        var username_check = await DB.getRecords('users',{username : username}); 
+        // var username_check = await db.Query(checkUsernameAvailableQueryString);
+
+        if (username_check.length != 0) {
+            Output(false, "Username already taken", res);
+            return
+        }
+
+        var userPersonalizedQueryString = `SELECT personalized FROM users WHERE uuid=\"${id}\"`;
+        var usersPersonalizedResults = await db.Query(userPersonalizedQueryString)
+
+        var hashed_password = await bcrypt.hash(password, SALT_ROUNDS);
+        var dateBegin = Math.round(new Date().getTime() / 1000);
+
+        try {
+            if (usersPersonalizedResults.length == 0 || usersPersonalizedResults[0].personalized == true) //if this uuid hasnt been registered / if it has been created on this device before
+            {
+                var insertAccountQueryString = `INSERT INTO users (id,uuid,username,password,email,personalized,wallet,date_begin) VALUES (0,'${id}','${username}','${hashed_password}','${email}',0,'[]',${dateBegin})`;
+                var insertResults = await db.Query(insertAccountQueryString)
+                Output(true, insertResults, res);
+            }
+            else {
+                var updateAccountsQueryString = `UPDATE users SET username=\"${username}\", password=\"${hashed_password}\",email=\"${email}\", personalized=1 WHERE uuid=\"${id}\"`;
+                var updateResults = await db.Query(updateAccountsQueryString)
+                Output(true, updateResults, res);
+            }
+        }
+        catch (err) {
+            console.log(`Register User Error: ${err}`)
+            Output(false, err, res);
+            return
+        }
+    }
+})
+
+app.post('/GenerateUser', (req, res) => {
+    var id = req.body.uuid;
+
+    if (id == undefined) {
+        Output(false, "No uuid specified", res);
+        return;
+    }
+    else {
+        var dateBegin = Math.round(new Date().getTime() / 1000);
+        var queryString = `INSERT INTO users (id,uuid,username,password,email,personalized,wallet,date_begin) VALUES (0,'${id}','','','',0,'[]',${dateBegin})`;
+
+        db.Query(queryString).then(function (data) {
+            Output(true, data, res);
+        }).catch(function (err) {
+            Output(false, err, res);
+        });
+    }
+});
+
+app.post('/RetrieveUser', async (req, res) => {
+    var id = req.body.uuid;
+    if (id == undefined) {
+        Output(false, "No uuid specified", res);
+        return;
+    }
+    else {        
+        var results = await DB.getRecords('users',{uuid:id}); 
+        Output(true, results, res);
+    }
+});
+
+app.post('/AddDiscountToWalletForUser', (req, res) => {
+
+    var user_id = parseInt(req.body.user_id);
+    var discount_id = parseInt(req.body.discount_id);
+
+    if (user_id == undefined || discount_id == undefined) {
+        Output(false, "No id specified", res);
+        return;
+    }
+    else {
+        var queryWallet = `SELECT wallet FROM users WHERE id='${user_id}'`;
+        db.Query(queryWallet).then(function (data) {
+
+            if (data == []) {
+                Output(false, "Hmm.. There seems to be an error,res");
+                return;
+            }
+
+
+            let wallet = JSON.parse(data[0].wallet);
+
+            //check if wallet exists
+            if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); return; }
+
+            //check if discount already added
+            var isDiscountPresent = false;
+            wallet.forEach(discount => {
+                if (discount.id == discount_id) {
+                    isDiscountPresent = true;
+                }
+            });
+
+            if (isDiscountPresent) {
+                Output(false, "Discount already in wallet", res);
+                return;
+            }
+
+            //check if wallet is full
+            if (wallet.length == 4) {
+                Output(false, "Your wallet is full!", res);
+                return;
+            }
+
+            //check if discount has run out
+            var discountQueryString = `SELECT curAvailCount FROM discounts WHERE id=${discount_id}`;
+            db.Query(discountQueryString).then(function (data) {
+
+                var curAvailCount = data[0].curAvailCount;
+
+                if (curAvailCount == 0) {
+                    Output(false, "Discount fully claimed", res);
+                    return;
+                }
+
+                var expiry = Math.round(new Date().getTime() / 1000) + EXPIRY_PERIOD;
+                var newDiscount = {
+                    id: discount_id,
+                    expiry: expiry
+                };
+
+                wallet.push(newDiscount);
+                wallet = JSON.stringify(wallet);
+
+                var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id='${user_id}'`;
+                db.Query(updateWalletString).then(function (data) { //update wallet
+                    var reduceDiscountCounterString = `UPDATE discounts SET curAvailCount=${curAvailCount - 1} WHERE id='${discount_id}'`;
+                    db.Query(reduceDiscountCounterString).then(function (data) { //set new counter
+                        var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
+                        db.Query(getNewWalletString).then(function (data) { //get new wallet to return
+                            let wallet = JSON.parse(data[0].wallet);
+                            Output(true, wallet, res);
+                            return;
+                        });
+                    });
+                }).catch(function (err) {
+                    Output(false, err, res);
+                    return;
+                });
+            });
+        });
+    }
+});
+
+app.post('/AddDiscountClaim', (req, res) => {
+    // var id = req.body.id;
+    // var discount_id = req.body.discount_id;
+    var user_id = parseInt(req.body.user_id);
+    var discount_id = parseInt(req.body.discount_id);
+
+    if (user_id == undefined || discount_id == undefined) {
+        Output(false, "No id specified", res);
+        return;
+    }
+    else {
+        var queryWallet = `SELECT wallet FROM users WHERE id='${user_id}'`;
+        db.Query(queryWallet).then(function (data) {
+
+            let wallet = JSON.parse(data[0].wallet);
+
+            //check if wallet exists
+            if (wallet == undefined) { Output(false, `Wallet does not exist with user id: ${user_id}`, res); }
+
+            var hasDiscount = false;
+            //check if the discount exists
+            wallet.forEach(discountObject => {
+                if (discountObject.id == discount_id) {
+                    hasDiscount = true;
+
+                    wallet = JSON.stringify(wallet.filter(discount => discount.id != discount_id));
+                    var epoch = Math.round(new Date().getTime() / 1000);
+
+                    var discountClaimString = `INSERT INTO discount_claims (id,discount_id,user_id,date) values (0,${discount_id},${user_id},${epoch})`;
+                    db.Query(discountClaimString).then(function (data) { //add discount claim
+                        var updateWalletString = `UPDATE users SET wallet='${wallet}' WHERE id=${user_id}`;
+                        db.Query(updateWalletString).then(function (data) { //update wallet            
+                            var getNewWalletString = `SELECT wallet FROM users WHERE id='${user_id}'`;
+                            db.Query(getNewWalletString).then(function (data) { //get new wallet to return
+                                let wallet = JSON.parse(data[0].wallet);
+                                Output(true, wallet, res);
+                                return;
+                            });
+                        }).catch(function (err) {
+                            Output(false, err, res);
+                            return;
+                        });
+
+                    }).catch(function (err) {
+                        Output(false, err, res);
+                        return;
+                    });
+                }
+            });
+
+            if (hasDiscount == false) {
+                Output(false, "User does not have this discount", res);
+                return;
+            }
+        });
+    }
+});
+
+app.post('/GetWalletForUser', (req, res) => {
+    var id = req.body.id;
+    if (id == undefined) {
+        Output(false, "No id specified", res);
+        return;
+    }
+    else {
+        //check whether any of the discounts have expired 
+        //if expired, remove
+
+        var walletOutput;
+        db.Query("SELECT wallet FROM users WHERE id='" + id + "'").then(function (walletData) {
+            walletOutput = JSON.parse(walletData[0].wallet);
+
+            var wallet = walletOutput.filter(CheckDiscountHasExpired);
+
+            // wallet.forEach(discount => {
+            //   console.log(epoch-discount.dateBegin>(60*60*24*3));
+            // })
+            // console.log("wallet:" + wallet);
+
+            var query = `UPDATE users SET wallet='${JSON.stringify(wallet)}' WHERE id=${id}`;
+            db.Query(query).then(function (data) {
+                Output(true, wallet, res);
+                return;
+            });
+        }).catch(function (err) {
+
+            Output(false, err, res);
+        });
+    }
+});
 
 function CheckDiscountHasExpired(discount) {
     var epoch = Math.round(new Date().getTime() / 1000);
