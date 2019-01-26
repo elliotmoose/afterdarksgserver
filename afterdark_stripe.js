@@ -82,21 +82,21 @@ module.exports.makeDefaultSource = async (customer_id,card_id) => {
     }   
 }
 
-module.exports.charge = async (customer_id,amount) => {
+module.exports.charge = async (customer_id,amount,description) => {
     try 
     {
         let response = await stripe.charges.create({
             amount: amount,
             currency: "sgd",
+            description : description,
             customer: customer_id,    
         })
         
-        console.log(response);
-        return response
+        // console.log(response);
+        return {success: true, output: response}
     } 
     catch (error) {
-        
-        return {error}
+        return {success: false, output: error}
     }
 }
 

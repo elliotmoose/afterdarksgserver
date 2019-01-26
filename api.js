@@ -15,6 +15,7 @@ app.use(bodyParse.json());
 app.use(bodyParse.urlencoded({ extended: false }));
 
 const JWT_SECRET = 'gskradretfa'
+const TICKET_SECRET = 'gskradretfa'
 const EXPIRY_PERIOD = 3600 * 24 * 2; //24 hours
 const SALT_ROUNDS = 10;
 
@@ -28,8 +29,8 @@ app.get('/', (req, res) => {
 
 //#region get generic data 
 app.get('/GetMerchants', async (req, res) => {
-    try {        
-        var merchantsResult = await DB.getRecords('merchants'); 
+    try {
+        var merchantsResult = await DB.getRecords('merchants');
         Output(true, merchantsResult, res);
     }
     catch (err) {
@@ -39,7 +40,7 @@ app.get('/GetMerchants', async (req, res) => {
 
 app.get('/GetDiscounts', async (req, res) => {
     try {
-        var discountsResult = await DB.getRecords('discounts'); 
+        var discountsResult = await DB.getRecords('discounts');
         Output(true, discountsResult, res);
     }
     catch (err) {
@@ -48,29 +49,25 @@ app.get('/GetDiscounts', async (req, res) => {
 });
 
 app.get('/GetEvents', async (req, res) => {
-    try {        
+    try {
         //get events linked to merchant
         // let events = await DB.getRecords('events',{merchant_id: merchant_id});
         let events = await DB.getRecords('events');
-        
+
         //get ticket_meta s linked to event
-        for(let event of events)
-        {        
-            let tickets = await DB.getRecords('tickets_meta',{event_id : event.id});
+        for (let event of events) {
+            let tickets = await DB.getRecords('tickets_meta', { event_id: event.id });
             event.tickets = tickets;
 
-            for(let ticket of tickets)
-            {
-                let available = await DB.query('SELECT COUNT(*) FROM tickets WHERE meta_id=? AND status=\'available\'',[ticket.id]);
-                let total = await DB.query('SELECT COUNT(*) FROM tickets WHERE meta_id=?',[ticket.id]);
+            for (let ticket of tickets) {
+                let available = await DB.query('SELECT COUNT(*) FROM tickets WHERE meta_id=? AND status=\'available\'', [ticket.id]);
+                let total = await DB.query('SELECT COUNT(*) FROM tickets WHERE meta_id=?', [ticket.id]);
 
-                if(available.length === 0 || total.length === 0)
-                {
-                    ticket.count = 0 
-                    ticket.total = 0 
+                if (available.length === 0 || total.length === 0) {
+                    ticket.count = 0
+                    ticket.total = 0
                 }
-                else
-                {
+                else {
                     ticket.count = available[0]["COUNT(*)"];
                     ticket.total = total[0]["COUNT(*)"];
                 }
@@ -108,20 +105,45 @@ app.get('/GetImageForMerchant/:id', (req, res) => {
 //#region get user data
 app.post('/GetWalletForUser', verifyToken, async (req, res) => {
     let user_id = req.user_id;
-    try 
-    {
-        let tickets = await DB.getRecords('tickets',{owner_id: user_id});        
+    try {
+        let tickets = await DB.getRecords('tickets', { owner_id: user_id });
         // let discounts = await DB.getRecords('discounts',{owner_id: user_id});
 
         let output = {
-            tickets: tickets,
-            discounts : []
+            tickets: [],
+            discounts: []
         }
 
-        Output(true,output,res)
-    } 
+        for (let ticket of tickets) {
+
+            let signature = await bcrypt.hash(`${TICKET_SECRET}${ticket.id}`,SALT_ROUNDS);
+            ticket.signature = signature;
+
+            let ticket_meta = await DB.getRecord('tickets_meta', { id: ticket.meta_id });
+            if (ticket_meta) {
+                let event = await DB.getRecord('events', { id: ticket_meta.event_id });
+
+                if (event) {
+                    let merchant = await DB.getRecord('merchants', { id: event.merchant_id })
+
+                    if (merchant) {
+                        ticket.meta = ticket_meta;
+                        ticket.event = event;
+                        ticket.merchant = merchant;
+                        output.tickets.push(ticket);
+                    }
+                }
+            }
+
+
+        }
+
+
+        Output(true, output, res)
+    }
     catch (error) {
-        Output(false,error,res);
+        console.log(error)
+        Output(false, error, res);
     }
 });
 
@@ -132,19 +154,35 @@ app.post('/Login', async (req, res) => {
     var username = req.body.username;
     var password = req.body.password;
 
-    try {       
-        var userDataResults = await DB.getRecords('users',{username : username}); 
-        if (userDataResults.length == 0) //username doesnt exist
+    try {
+        var merchantData = await DB.getRecord('merchant_users',{username: username});
+        
+        if(merchantData != undefined)
+        {
+            let merchantPassIsCorrect = await bcrypt.compare(password, merchantData.password);
+            if(!merchantPassIsCorrect)
+            {
+                throw "Invalid Password"
+            }
+
+            console.log(`MERCHANT LOGGED IN: ${username}`);
+
+            merchantData.password = undefined;
+            merchantData.type = 'MERCHANT'
+            let token = await jwt.sign({id: merchantData.id, email: merchantData.email}, JWT_SECRET);
+            merchantData.token = token;
+            Output(true,merchantData,res);
+            return
+        }
+
+
+        var userData = await DB.getRecord('users', { username: username });
+        if (userData === undefined) //username doesnt exist
         {
             throw "Invalid Username"
         }
 
-        var correctPass = await bcrypt.compare(password, userDataResults[0].password)
-
-        // console.log(password);
-        // console.log(userDataResults[0].password)
-
-        // console.log(correctPass)
+        var correctPass = await bcrypt.compare(password, userData.password)
 
         if (!correctPass) {
             throw "Invalid Password"
@@ -152,10 +190,9 @@ app.post('/Login', async (req, res) => {
 
         console.log(`USER LOGGED IN: ${username}`);
 
-        let userData = userDataResults[0]
         userData.password = undefined
-
-        let token = await jwt.sign({id: userData.id, email: userData.email},JWT_SECRET);
+        userData.type = 'USER'
+        let token = await jwt.sign({ id: userData.id, email: userData.email }, JWT_SECRET);
         userData.token = token;
         Output(true, userData, res);
     }
@@ -174,51 +211,50 @@ app.post('/FacebookLogin', async (req, res) => {
     var dateBegin = Math.round(new Date().getTime() / 1000);
 
     try {
-        var userResult = await DB.getRecord('facebook_users',{id : id});         
-        
+        var userResult = await DB.getRecord('facebook_users', { id: id });
+
         if (userResult !== undefined) //User exists, logging in
         {
-            let existingADUser = await DB.getRecord('users',{email : email})
-            if(userResult.email != email) //user has id, but email mismatches with fb db. meaning user changed email
+            let existingADUser = await DB.getRecord('users', { email: email })
+            let existingADMerchant = await DB.getRecord('merchant_users', { email: email })
+            if (userResult.email != email) //user has id, but email mismatches with fb db. meaning user changed email
             {
                 //we then want to help user update. but we need to also check if the email has been used to create another afterdark user account
-                
-                if(existingADUser !== undefined) //there exists a user with that email already
+
+                if (existingADUser !== undefined || existingADMerchant !== undefined) //there exists a user with that email already
                 {
-                    Output(false, 'It seems your Facebook email has changed. The new email has already been used to create an Afterdark account.',res)
+                    Output(false, 'It seems your Facebook email has changed. The new email has already been used to create an Afterdark account.', res)
                     return
                 }
-                else
-                {
-                    await DB.updateRecords('facebook_users',{email : email},{id : id})                
-                    console.log(`Updating email from ${userResult.email} to ${email}`)                
-                }                
+                else {
+                    await DB.updateRecords('facebook_users', { email: email }, { id: id })
+                    console.log(`Updating email from ${userResult.email} to ${email}`)
+                }
             }
 
             console.log('Facebook User Logged In')
-            let token = await jwt.sign({id: existingADUser.id, email: existingADUser.email},JWT_SECRET);
+            let token = await jwt.sign({ id: existingADUser.id, email: existingADUser.email }, JWT_SECRET);
             existingADUser.token = token;
             Output(true, existingADUser, res);
         }
         else //User does not exist, generate an account
-        {   
-            let userWithSameEmail = await DB.getRecord('users',{email: email})
+        {
+            let userWithSameEmail = await DB.getRecord('users', { email: email })
 
-            if(userWithSameEmail !== undefined)
-            {
-                Output(false,"Your Facebook email has already been used to create an account",res)
+            if (userWithSameEmail !== undefined) {
+                Output(false, "Your Facebook email has already been used to create an account", res)
                 return
             }
 
-            await DB.insertRecord('users', {email : email,gender : gender, age : age, date_begin : dateBegin})
-            let newUserData = await DB.getRecord('users',{email : email});         
-            await DB.insertRecord('facebook_users',{id : id,afterdark_id: newUserData.id, email : email, name : name, age : age, gender : gender, date_begin : dateBegin})                        
+            await DB.insertRecord('users', { email: email, gender: gender, age: age, date_begin: dateBegin })
+            let newUserData = await DB.getRecord('users', { email: email });
+            await DB.insertRecord('facebook_users', { id: id, afterdark_id: newUserData.id, email: email, name: name, age: age, gender: gender, date_begin: dateBegin })
             console.log('Facebook User Created')
 
-            let token = await jwt.sign({id: newUserData.id, email: newUserData.email},JWT_SECRET);
+            let token = await jwt.sign({ id: newUserData.id, email: newUserData.email }, JWT_SECRET);
             newUserData.token = token;
             Output(true, newUserData, res);
-        }        
+        }
     }
     catch (err) {
         console.log(err)
@@ -226,191 +262,173 @@ app.post('/FacebookLogin', async (req, res) => {
     }
 })
 
-app.post('/RetrieveCustomer',  async (req,res) => {
+app.post('/RetrieveCustomer', async (req, res) => {
     let ad_userid = req.body.id;
     let token = req.body.token;
     let email = req.body.email;
 
-    try
-    {
-        CheckRequiredFields({ad_userid,token,email});
+    try {
+        CheckRequiredFields({ ad_userid, token, email });
 
         //step 1: check if user has a customer
-        let ad_customer = await DB.getRecord('stripe_customers',{afterdark_id : ad_userid})
+        let ad_customer = await DB.getRecord('stripe_customers', { afterdark_id: ad_userid })
 
         //step 2a: if has, return customer id
-        if(ad_customer !== undefined)
-        {
+        if (ad_customer !== undefined) {
             let customer_id = ad_customer.stripe_customer_id;
             Output(true, customer_id, res);
         }
         else //step 2b: if not, create customer
         {
-            let customer = await adstripe.createCustomer(email, token);        
-            await DB.insertRecord('stripe_customers',{afterdark_id : ad_userid, stripe_customer_id: customer.id}) 
-        }    
-    } 
-    catch(error)
-    {
-        Output(false,error,res)
+            let customer = await adstripe.createCustomer(email, token);
+            await DB.insertRecord('stripe_customers', { afterdark_id: ad_userid, stripe_customer_id: customer.id })
+        }
+    }
+    catch (error) {
+        Output(false, error, res)
     }
 })
 
-app.post('/Register', async (req,res) => {
+app.post('/Register', async (req, res) => {
     let username = req.body.username
     let password = req.body.password
     let email = req.body.email
     let gender = req.body.gender == "male" ? 1 : req.body.gender == "female" ? 2 : undefined
     let age = req.body.age
     let dateBegin = Math.round(new Date().getTime() / 1000);
-    
-    try 
-    {        
-        CheckRequiredFields({username,password,email});
-        let usernameRecords = await DB.getRecord('users',{username : username})
 
-        if(usernameRecords === undefined)
-        {
-            let emails = await DB.getRecord('users',{email : email})
-            let emailsFB = await DB.getRecord('facebook_users',{email : email})
+    try {
+        CheckRequiredFields({ username, password, email });
+        let usernameRecords = await DB.getRecord('users', { username: username })
+        let merchantUsernameRecord = await DB.getRecord('merchant_users', { username: username }) //check against merchants in case        
 
-            if(emails === undefined && emailsFB === undefined)
-            {
+        if (usernameRecords === undefined && merchantUsernameRecord === undefined) {
+            let emails = await DB.getRecord('users', { email: email })
+            let emailsFB = await DB.getRecord('facebook_users', { email: email })
+            let merchantEmailRecord = await DB.getRecord('merchant_users', { email: email }) //check against merchants in case
+
+            if (emails === undefined && emailsFB === undefined && merchantEmailRecord === undefined) {
                 console.log(`New user: ${username} - ${email}`);
                 // console.log({username : username, password : password, email : email,gender : gender, age : age})
-                await DB.insertRecord('users',{username : username, password : password, email : email,gender : gender, age : age, date_begin : dateBegin})
-                let userData = await DB.getRecord('users',{username : username})
-                userData.password = undefined                
-                let token = await jwt.sign({id: userData.id, email: userData.email},JWT_SECRET);
+                await DB.insertRecord('users', { username: username, password: password, email: email, gender: gender, age: age, date_begin: dateBegin })
+                let userData = await DB.getRecord('users', { username: username })
+                userData.password = undefined
+                let token = await jwt.sign({ id: userData.id, email: userData.email }, JWT_SECRET);
                 userData.token = token;
-                Output(true,userData,res)
+                Output(true, userData, res)
             }
-            else
-            {
+            else {
                 throw 'Email already exists';
             }
         }
-        else
-        {
+        else {
             throw 'Username already taken';
         }
     }
-    catch(e)
-    {
+    catch (e) {
         console.log(e)
-        Output(false,e,res)
+        Output(false, e, res)
     }
 })
 
 //#endregion
 
 //#region event/ticket management
-app.post('/CreateTicket', async (req,res) => {
+app.post('/CreateTicket', async (req, res) => {
     let name = req.body.name;
     let description = req.body.description;
     let count = req.body.count;
     let price = req.body.price;
     let event_id = req.body.event_id;
-    let dateCreated = Math.round(new Date().getTime() / 1000);    
+    let dateCreated = Math.round(new Date().getTime() / 1000);
 
-    try     
-    {
+    try {
         CheckRequiredFields({
-            name : name,
-            description : description,
-            count : count,
-            price : price,
-            event_id : event_id,
+            name: name,
+            description: description,
+            count: count,
+            price: price,
+            event_id: event_id,
         })
 
-        let checkEvent = await DB.getRecord('events',{id : event_id})
+        let checkEvent = await DB.getRecord('events', { id: event_id })
 
-        if(checkEvent === undefined)
-        {
+        if (checkEvent === undefined) {
             throw 'The event you are trying to create a ticket for does not exist';
         }
 
-        let ticket_meta = await DB.insertRecord('tickets_meta',{
-            name : name,
-            description : description,
-            event_id : event_id,
-            date_created : dateCreated
+        let ticket_meta = await DB.insertRecord('tickets_meta', {
+            name: name,
+            description: description,
+            event_id: event_id,
+            date_created: dateCreated
         });
 
         let meta_id = ticket_meta.insertId;
-        for(let i=0;i<count;i++)
-        {
+        for (let i = 0; i < count; i++) {
             await DB.insertRecord('tickets',
-            {
-                name : name,
-                description : description,
-                meta_id: meta_id,
-                price : price,
-                status : 'available',
-                date_created : dateCreated
-            })
+                {
+                    name: name,
+                    description: description,
+                    meta_id: meta_id,
+                    price: price,
+                    status: 'available',
+                    date_created: dateCreated
+                })
         }
 
-        Output(true,ticket_meta,res)
+        Output(true, ticket_meta, res)
     }
-    catch(error)
-    {
+    catch (error) {
         console.log(error)
-        Output(false,error,res)
+        Output(false, error, res)
     }
 })
 
-app.post('/DeleteEvent', async (req,res) => {    
+app.post('/DeleteEvent', async (req, res) => {
     let event_id = req.body.event_id;
 
-    try 
-    {
-        let getEvent = await DB.getRecord('events',{id : event_id});
-    
-        if(getEvent === undefined)
-        {
+    try {
+        let getEvent = await DB.getRecord('events', { id: event_id });
+
+        if (getEvent === undefined) {
             throw "The event does not exist";
         }
 
-        let metas = await DB.getRecords('tickets_meta',{event_id : event_id});
+        let metas = await DB.getRecords('tickets_meta', { event_id: event_id });
 
-        if(metas.length !== 0)
-        {
-            for(let meta of metas)
-            {
-                await DB.deleteRecords('tickets',{meta_id : meta.id});
+        if (metas.length !== 0) {
+            for (let meta of metas) {
+                await DB.deleteRecords('tickets', { meta_id: meta.id });
             }
         }
 
-        await DB.deleteRecords('tickets_meta',{event_id : event_id});
-        await DB.deleteRecords('events',{id : event_id});
+        await DB.deleteRecords('tickets_meta', { event_id: event_id });
+        await DB.deleteRecords('events', { id: event_id });
 
-        Output(true,'Deleted',res);
+        Output(true, 'Deleted', res);
     }
-    catch(err)
-    {
+    catch (err) {
         console.log(err)
-        Output(false,err,res)
+        Output(false, err, res)
     }
 })
 
-app.post('/DeleteTicket', async (req,res)=>{
-    
+app.post('/DeleteTicket', async (req, res) => {
+
     let ticket_meta_id = req.body.meta_id;
-    try 
-    {
-        await DB.deleteRecords('tickets_meta',{id : ticket_meta_id})
-        await DB.deleteRecords('tickets',{meta_id : ticket_meta_id})
-        Output(true,'Deleted',res)
+    try {
+        await DB.deleteRecords('tickets_meta', { id: ticket_meta_id })
+        await DB.deleteRecords('tickets', { meta_id: ticket_meta_id })
+        Output(true, 'Deleted', res)
     }
-    catch(err)
-    {
+    catch (err) {
         console.log(err)
-        Output(false,err,res)
+        Output(false, err, res)
     }
 })
 
-app.post('/CreateEvent', async (req,res) => {
+app.post('/CreateEvent', async (req, res) => {
     let name = req.body.name;
     let merchant_id = req.body.merchant_id;
     let location = req.body.location;
@@ -418,254 +436,312 @@ app.post('/CreateEvent', async (req,res) => {
     let time = req.body.time;
     let dateCreated = Math.round(new Date().getTime() / 1000);
 
-    try 
-    {
-        let merchant = await DB.getRecord('merchants',{id : merchant_id})
-        
-        if(merchant === undefined)
-        {
+    try {
+        let merchant = await DB.getRecord('merchants', { id: merchant_id })
+
+        if (merchant === undefined) {
             throw "Merchant does not exist"
         }
 
-        let output = await DB.insertRecord('events',{name : name,merchant_id : merchant_id,location : location, time: time, date : date, created: dateCreated})        
-        Output(true,output,res)
+        let output = await DB.insertRecord('events', { name: name, merchant_id: merchant_id, location: location, time: time, date: date, created: dateCreated })
+        Output(true, output, res)
     }
-    catch(error)
-    {
+    catch (error) {
         console.log(error)
-        Output(false,error,res)
+        Output(false, error, res)
     }
 })
 
 //#endregion
 
-app.post('/PurchaseTicket', verifyToken, async (req,res) => {
+app.post('/PurchaseTicket', verifyToken, async (req, res) => {
     let owner_id = req.user_id;
     let ticket_meta_id = req.body.ticket_meta_id;
     let transaction_token = req.body.transaction_token;
 
-    try 
-    {
-        CheckRequiredFields({owner_id,ticket_meta_id});
+    try {
+        CheckRequiredFields({ owner_id, ticket_meta_id });
         //check owner exists
-        let user = await DB.getRecord('users',{id : owner_id});
-
-        if(user === undefined)
-        {
-            throw 'User does not exist';
-        }
-
+        let user = await DB.getRecord('users', { id: owner_id });
+        ThrowWithMessageIfEmpty(user, 'User does not exist')
+        let ticket_meta = await DB.getRecord('tickets_meta', { id: ticket_meta_id })
+        ThrowWithMessageIfEmpty(ticket_meta, 'Ticket does not exist')
+        let event = await DB.getRecord('events', { id: ticket_meta.event_id })
+        ThrowWithMessageIfEmpty(event, 'Event does not exist')
         //check ticket availability
-        let tickets = await DB.getRecords('tickets',{meta_id : ticket_meta_id, status : 'available'})
-
-        if(tickets.length === 0)
-        {
-            throw 'There are no more such tickets available';
-        }
+        let tickets = await DB.getRecords('tickets', { meta_id: ticket_meta_id, status: 'available' })
+        ThrowWithMessageIfEmpty(tickets, 'There are no more such tickets available')
 
         //purchase
         // - get stripe customer from adUser_id
         // - create charge for this customer
         // - on success, allocate ticket
-        let customer = await DB.getRecord('stripe_customers',{afterdark_id : owner_id});
-        if(customer === undefined)
-        {
-            throw 'User is not a stripe customer'
-        }
+        let customer = await DB.getRecord('stripe_customers', { afterdark_id: owner_id });
+        ThrowWithMessageIfEmpty(customer, 'User is not a stripe customer')
+
 
         let customer_id = customer.stripe_customer_id;
         let ticket_to_purchase = tickets[0];
         let ticket_chargeable = ticket_to_purchase.price + ticket_to_purchase.tx_fee;
-        
-        console.log(`Charging ${ticket_chargeable} to ${customer_id} for ticket: ${ticket_to_purchase.id}`);
-        let response = await adstripe.charge(customer_id,ticket_chargeable)
 
-        if(!response.error)
-        {
+        // console.log(`Charging ${ticket_chargeable} to ${customer_id} for ticket: ${ticket_to_purchase.id}`);
+        let charge_description = `${event.name} - ${ticket_meta.name} - id: ${ticket_to_purchase.id}`
+        let charge_response = await adstripe.charge(customer_id, ticket_chargeable, charge_description)
+
+        if (charge_response.success === true) {
+            //record charge
+            let record_charge_response = await DB.insertRecord('charges', {
+                id: charge_response.output.id,
+                customer: charge_response.output.customer,
+                amount: charge_response.output.amount,
+                description: charge_description,
+                date: charge_response.output.created,
+                status: charge_response.output.status,
+                receipt: charge_response.output.receipt_url,
+                stripe_response: JSON.stringify(charge_response.output)
+            });
+
             //allocate ticket 
-            let output = await DB.updateRecords('tickets',{status : 'allocated', owner_id : owner_id},{id : ticket_to_purchase.id})
-            
-            if(output !== undefined)
-            {
-                Output(true,response,res)
-            }
-            else
-            {
+            let allocate_response = await DB.updateRecords('tickets', {
+                status: 'allocated',
+                owner_id: owner_id
+            },
+                {
+                    id: ticket_to_purchase.id
+                })
+
+            if (allocate_response.affectedRows == 0) {
                 throw 'Allocation failed at updating ticket owner';
             }
+
+            let ticket_payload = {
+                id: ticket_to_purchase.id,
+                price: ticket_to_purchase.price,
+                tx_fee: ticket_to_purchase.tx_fee,
+                meta: ticket_meta
+            }
+
+            console.log(ticket_payload);
+            Output(true, ticket_payload, res);
+        }
+        else {
+
+        }
+
+    }
+    catch (error) {
+        console.log(error)
+        Output(false, error, res)
+    }
+
+
+})
+
+app.post('/VerifyTicket', verifyToken, async (req, res) => {
+    let merchant_user_id = req.user_id;
+    let ticket_id = req.body.ticket_id;
+    let signature = req.body.signature; //ticket signature
+    
+    
+    try {
+        //verify signature
+        let ticket_is_valid = await bcrypt.compare(`${TICKET_SECRET}${ticket_id}`, signature);
+
+        if(ticket_is_valid !== true)
+        {
+            throw 'INVALID_TICKET';
+        }
+
+        //verify ticket belongs to merchant event
+        let merchant_user = await DB.getRecord('merchant_users', { id: merchant_user_id });
+        if (merchant_user === undefined) { throw 'Merchant user does not exist' };
+
+        let ticket = await DB.getRecord('tickets', { id: ticket_id });
+        if (ticket === undefined) { throw 'Invalid ticket' };
+
+        //check if ticket -> meta -> merchant_id matches
+        let ticket_meta = await DB.getRecord('tickets_meta', { id: ticket.meta_id });
+        if (ticket_meta === undefined) { throw 'Invalid ticket: meta does not exist for ticket' };
+
+        let event = await DB.getRecord('events',{id: ticket_meta.event_id});
+        if (event === undefined) { throw 'Invalid ticket: event does not exist for ticket' };
+
+        if(event.merchant_id != merchant_user.merchant_id)
+        {
+            console.log(merchant_user.merchant_id);
+            console.log(event.merchant_id)
+            throw 'MERCHANT_MISMATCH';
+        }
+
+        if (ticket.status == 'allocated') {
+            let update_ticket = await DB.updateRecords('tickets', { status: 'consumed' }, { id: ticket_id });
+            Output(true,'CONSUMED',res);
+        }
+        else if (ticket.status == 'consumed') {
+            Output(true,'REENTRY',res);
         }
         else
         {
-            console.log(response.error);
-            Output(false,'The ticket could not be purchased at this time',res);
-        }
+            throw 'TICKET_UNALLOCATED';
+        }        
     }
-    catch(error)
-    {
-        console.log(error)
-        Output(false,error,res)
+    catch (error) {
+        console.log(error);
+        Output(false, 'EXCEPTION', res);
     }
-
-    
 })
 
 //#region stripe related 
-app.post('/AddPaymentMethod', verifyToken, async (req,res)=>{
+app.post('/AddPaymentMethod', verifyToken, async (req, res) => {
     let user_id = req.user_id;
     let card_token = req.body.token;
-    
-    //find out if user is already a stripe customer
-    try 
-    {
-        CheckRequiredFields({card_token: card_token, user_id: user_id});
 
-        let customer = await DB.getRecord('stripe_customers',{afterdark_id : user_id})
-        if(customer === undefined)
-        {
+    //find out if user is already a stripe customer
+    try {
+        CheckRequiredFields({ card_token: card_token, user_id: user_id });
+
+        let customer = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
+        if (customer === undefined) {
             console.log('Creating new customer...')
             //create customer
-            let user = await DB.getRecord('users',{id: user_id})
+            let user = await DB.getRecord('users', { id: user_id })
 
-            
-            if(user === undefined || user.email === undefined || user.email === null)
-            {
+
+            if (user === undefined || user.email === undefined || user.email === null) {
                 console.log(`no user with id ${user_id}`)
                 throw 'User does not exist'
             }
 
-            let customer = await adstripe.createCustomer(user.email,card_token);
-            let newCustomerResponse = await DB.insertRecord('stripe_customers',{afterdark_id: user_id, stripe_customer_id: customer.id})
+            let customer = await adstripe.createCustomer(user.email, card_token);
+            let newCustomerResponse = await DB.insertRecord('stripe_customers', { afterdark_id: user_id, stripe_customer_id: customer.id })
             let stripe_customer_data = await adstripe.retrieveCustomer(customer.id);
-            Output(true,stripe_customer_data,res);
+            Output(true, stripe_customer_data, res);
         }
-        else
-        {
+        else {
             console.log('Adding source to customer...')
             //add source
             let cus_token = customer.stripe_customer_id;
 
-            if(cus_token === undefined || cus_token === null)
-            {
+            if (cus_token === undefined || cus_token === null) {
                 throw 'Database inconsistency: the stripe customer cannot be found. Please contact support'
             }
 
-            let response = await adstripe.addSourceToCustomer(cus_token,card_token);
+            let response = await adstripe.addSourceToCustomer(cus_token, card_token);
             let stripe_customer_data = await adstripe.retrieveCustomer(cus_token);
-            Output(true, stripe_customer_data,res);
+            Output(true, stripe_customer_data, res);
         }
     }
-    catch(error)
-    {
+    catch (error) {
         console.log(error);
-        Output(false,error,res);
-    }    
+        Output(false, error, res);
+    }
 })
 
-app.post('/RemovePaymentMethod', verifyToken, async (req,res)=>{
+app.post('/RemovePaymentMethod', verifyToken, async (req, res) => {
     let user_id = req.user_id;
     let card_id = req.body.card_id;
-    
-    //find out if user is already a stripe customer
-    try 
-    {
-        CheckRequiredFields({card_id: card_id, user_id: user_id});
 
-        let customer = await DB.getRecord('stripe_customers',{afterdark_id : user_id})
-        let user = await DB.getRecord('users',{id: user_id})
-        
-        if(customer === undefined || user === undefined || user.email === undefined || user.email === null)
-        {
+    //find out if user is already a stripe customer
+    try {
+        CheckRequiredFields({ card_id: card_id, user_id: user_id });
+
+        let customer = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
+        let user = await DB.getRecord('users', { id: user_id })
+
+        if (customer === undefined || user === undefined || user.email === undefined || user.email === null) {
             console.log(`no user with id ${user_id}`)
             throw 'User does not exist'
         }
 
         let cus_id = customer.stripe_customer_id;
 
-        let response = await adstripe.removeSourceFromCustomer(cus_id,card_id);
+        let response = await adstripe.removeSourceFromCustomer(cus_id, card_id);
         let stripe_customer_data = await adstripe.retrieveCustomer(customer.stripe_customer_id);
-        Output(true, stripe_customer_data,res);        
+        Output(true, stripe_customer_data, res);
     }
-    catch(error)
-    {
+    catch (error) {
         console.log(error);
-        Output(false,error,res);
-    }    
+        Output(false, error, res);
+    }
 })
 
-app.post('/MakeDefaultPaymentMethod', verifyToken, async (req,res)=>{
+app.post('/MakeDefaultPaymentMethod', verifyToken, async (req, res) => {
     let user_id = req.user_id;
-    let card_id = req.body.card_id;    
+    let card_id = req.body.card_id;
 
     //find out if user is already a stripe customer
-    try 
-    {
-        CheckRequiredFields({card_id: card_id, user_id: user_id});
+    try {
+        CheckRequiredFields({ card_id: card_id, user_id: user_id });
 
-        let customer = await DB.getRecord('stripe_customers',{afterdark_id : user_id})
-        let user = await DB.getRecord('users',{id: user_id})
-        
-        if(customer === undefined || user === undefined || user.email === undefined || user.email === null)
-        {
+        let customer = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
+        let user = await DB.getRecord('users', { id: user_id })
+
+        if (customer === undefined || user === undefined || user.email === undefined || user.email === null) {
             console.log(`no user with id ${user_id}`)
             throw 'User does not exist'
         }
 
         let cus_id = customer.stripe_customer_id;
 
-        let response = await adstripe.makeDefaultSource(cus_id,card_id);
+        let response = await adstripe.makeDefaultSource(cus_id, card_id);
         let stripe_customer_data = await adstripe.retrieveCustomer(customer.stripe_customer_id);
-        Output(true, stripe_customer_data,res);        
+        Output(true, stripe_customer_data, res);
     }
-    catch(error)
-    {
+    catch (error) {
         console.log(error);
-        Output(false,error,res);
-    }    
+        Output(false, error, res);
+    }
 })
 
-app.post('/RetrieveStripeCustomer',verifyToken,  async (req,res) => {    
+app.post('/RetrieveStripeCustomer', verifyToken, async (req, res) => {
     let user_id = req.user_id;
 
-    try 
-    {
-        CheckRequiredFields({user_id : user_id});
-        let user = await DB.getRecord('stripe_customers',{afterdark_id: user_id})
-        
-        if(user === undefined)
-        {
+    try {
+        CheckRequiredFields({ user_id: user_id });
+        let user = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
+
+        if (user === undefined) {
             throw 'User is not a stripe customer'
         }
 
         let customer = await adstripe.retrieveCustomer(user.stripe_customer_id);
-        Output(true,customer,res);
+        Output(true, customer, res);
     }
-    catch(error)
-    {
+    catch (error) {
         console.log(error)
-        Output(false,error,res);
-    }    
+        Output(false, error, res);
+    }
 })
 
 //#endregion
 
-async function verifyToken(req,res,next)
-{
+async function verifyToken(req, res, next) {
     let token = req.headers.authorization;
-    if(token === undefined)
-    {
-        Output(false,'Missing authorization token',res)
+    if (token === undefined) {
+        Output(false, 'Missing authorization token', res)
         return
     }
 
-    try 
-    {
+    try {
         let token_body = await jwt.verify(token, JWT_SECRET);
+
+        // let user = await DB.getRecord('users',{user_id: token_body.id});
+        // if(user === undefined)
+        // {
+        //     let merchant = await DB.getRecord('merchant_users',{user_id: token_body.id})
+
+        //     if()
+        //     {
+
+        //     }
+        // }
         req.user_id = token_body.id;
         req.email = token_body.email;
     }
-    catch(error)
-    {
-        Output(false,'Authorization Token Invalid',res);
+    catch (error) {
+        console.log(error)
+        Output(false, 'Authorization Token Invalid', res);
+        return
     }
 
     next();
@@ -680,18 +756,26 @@ function CheckDiscountHasExpired(discount) {
 function Output(success, message, res) {
     var response = { success: success, output: message };
     res.status(200);
-    res.send(response);
+    res.json(response);
 }
 
-function CheckRequiredFields(object)
-{
-    for(var key in object)
-    {
-        if(object[key] === undefined || object[key] === null)
-        {
+function CheckRequiredFields(object) {
+    for (var key in object) {
+        if (object[key] === undefined || object[key] === null) {
             throw `Required value missing: ${key}`
         }
     }
 }
 
+function ThrowWithMessageIfEmpty(object, message) {
+    if (object === undefined || object === null) {
+        throw message
+    }
+    else if (Array.isArray(object) && object.length === 0) {
+        console.log('array')
+        throw message
+    }
+}
+
 module.exports = app;
+
