@@ -40,8 +40,24 @@ app.get('/GetMerchants', async (req, res) => {
 
 app.get('/GetDiscounts', async (req, res) => {
     try {
-        var discountsResult = await DB.getRecords('discounts');
-        Output(true, discountsResult, res);
+        var discounts = await DB.getRecords('discounts_meta');
+
+        for(let discount of discounts)
+        {
+            let available = await DB.query('SELECT COUNT(*) FROM discounts WHERE meta_id=? AND status=\'available\'', [discount.id]);
+            let total = await DB.query('SELECT COUNT(*) FROM discounts WHERE meta_id=?', [discount.id]);
+
+            if (available.length === 0 || total.length === 0) {
+                discount.count = 0
+                discount.total = 0
+            }
+            else {
+                discount.count = available[0]["COUNT(*)"];
+                discount.total = total[0]["COUNT(*)"];
+            }
+        }
+
+        Output(true, discounts, res);
     }
     catch (err) {
         Output(false, err, res);
@@ -454,6 +470,7 @@ app.post('/CreateEvent', async (req, res) => {
 
 //#endregion
 
+//#region ticket purchase/verify
 app.post('/PurchaseTicket', verifyToken, async (req, res) => {
     let owner_id = req.user_id;
     let ticket_meta_id = req.body.ticket_meta_id;
@@ -541,55 +558,192 @@ app.post('/VerifyTicket', verifyToken, async (req, res) => {
     let merchant_user_id = req.user_id;
     let ticket_id = req.body.ticket_id;
     let signature = req.body.signature; //ticket signature
-    
-    
+    ticket_id = 2;
     try {
         //verify signature
         let ticket_is_valid = await bcrypt.compare(`${TICKET_SECRET}${ticket_id}`, signature);
 
         if(ticket_is_valid !== true)
         {
-            throw 'INVALID_TICKET';
+            Error('INVALID_TICKET','Invalid Ticket','This is not a valid ticket',res);
+            return
         }
 
         //verify ticket belongs to merchant event
         let merchant_user = await DB.getRecord('merchant_users', { id: merchant_user_id });
-        if (merchant_user === undefined) { throw 'Merchant user does not exist' };
+        if (merchant_user === undefined) { 
+            Error('MERCHANT_USER_MISSING','Merchant User Missing','This merchant user could not be found',res);    
+            return
+        };
 
         let ticket = await DB.getRecord('tickets', { id: ticket_id });
-        if (ticket === undefined) { throw 'Invalid ticket' };
+        if (ticket === undefined) { 
+            Error('TICKET_MISSING','Ticket Missing','There exists no ticket with this id',res);    
+            return
+         };
 
         //check if ticket -> meta -> merchant_id matches
         let ticket_meta = await DB.getRecord('tickets_meta', { id: ticket.meta_id });
-        if (ticket_meta === undefined) { throw 'Invalid ticket: meta does not exist for ticket' };
+        if (ticket_meta === undefined) {
+            Error('TICKET_META_MISSING','Ticket Expired','This ticket is no longer in use.',res);    
+            return
+        };
 
         let event = await DB.getRecord('events',{id: ticket_meta.event_id});
-        if (event === undefined) { throw 'Invalid ticket: event does not exist for ticket' };
+        if (event === undefined) {
+            Error('EVENT_MISSING','Event Missing','This event no longer exists.',res);    
+            return
+        };
 
         if(event.merchant_id != merchant_user.merchant_id)
         {
             console.log(merchant_user.merchant_id);
             console.log(event.merchant_id)
-            throw 'MERCHANT_MISMATCH';
+            Error('MERCHANT_MISMATCH','Merchant Mismatch','This ticket does not belong to an event hosted by the merchant trying to validate this ticket.',res);
+            return
         }
 
         if (ticket.status == 'allocated') {
             let update_ticket = await DB.updateRecords('tickets', { status: 'consumed' }, { id: ticket_id });
-            Output(true,'CONSUMED',res);
+            Respond('VERIFIED', {}, res)
+            return
         }
         else if (ticket.status == 'consumed') {
-            Output(true,'REENTRY',res);
+            Respond('RE_ENTRY', {}, res)
+            return
         }
         else
         {
-            throw 'TICKET_UNALLOCATED';
+            Error('TICKET_UNALLOCATED','Ticket Misallocation','There seems to be an error with the specified ticket. Please Contact Support for Help.',res);
+            return
         }        
     }
     catch (error) {
         console.log(error);
-        Output(false, 'EXCEPTION', res);
+        InternalServerError(res);
     }
 })
+
+//#endregion
+
+//#region discount management
+app.post('/CreateDiscount', async (req,res)=>{
+    let discount_name = req.body.discount_name
+    let description = req.body.description
+    let amount = req.body.amount
+    let count = req.body.count
+    let merchant_id = req.body.merchant_id
+    let exclusive = req.body.exclusive
+    let rating = req.body.rating
+    let dateCreated = Math.round(new Date().getTime() / 1000);
+
+    try {
+        try {
+            CheckRequiredFields({
+                discount_name: discount_name,
+                description: description,
+                count: count,
+                merchant_id: merchant_id,
+                exclusive: exclusive,
+                rating: rating,
+                amount: amount
+            })
+        } catch (error) {
+            Error('MISSING_FIELD','Missing Field',error,res);
+            return
+        }
+
+        let discount_meta = await DB.insertRecord('discounts_meta',{
+            name: discount_name,
+            description: description,
+            merchant_id: merchant_id,
+            exclusive: exclusive,
+            rating: rating,
+            amount: amount
+        })
+        
+
+        let meta_id = discount_meta.insertId;
+        for (let i = 0; i < count; i++) {
+            await DB.insertRecord('discounts',
+                {
+                    meta_id: meta_id,
+                    status: 'available',
+                    date_created: dateCreated
+                })
+        }
+
+        Respond('DISCOUNT_CREATED',{ticket_meta_id: meta_id,count: count},res);
+    } catch (error) {
+        console.log(error)
+        InternalServerError(res);
+    }
+
+})
+
+app.post('/DeleteDiscount', async (req,res)=>{
+    let meta_id = req.body.meta_id;
+
+    try {
+        let removeMeta = await DB.deleteRecords('discounts_meta',{id: meta_id});
+        let removeDiscounts = await DB.deleteRecords('discounts',{meta_id: meta_id});
+        Respond('DELETED_DISCOUNTS',removeMeta,res);
+    } catch (error) {
+        console.log(error)
+        InternalServerError(res);
+    }
+})
+
+//#endregion
+
+//#region discount allocation
+
+app.post('/AddToWallet',verifyToken, async (req,res)=>{
+    let user_id = req.user_id;
+    let discount_id = req.body.discount_id;
+
+    try 
+    {
+        if(!user_id)
+        {
+            Error('MISSING_FIELD','User id missing','A user id was not specified',res);
+            return
+        }
+
+        if(!discount_id)
+        {
+            Error('MISSING_FIELD','Discount id missing','A discount id was not specified',res);
+            return
+        }
+
+        let user = await DB.getRecord('users',{id: user_id});
+
+        if(!user)
+        {
+            Error('NO_USER','No User','The specified user does not exist',res);
+            return
+        }
+
+        let discountToAllocate = await DB.getRecord('discounts',{status: 'available'});
+
+        if(!discountToAllocate)
+        {
+            Error('DISCOUNT_UNAVAILABLE','Discount Unavailable','The requested discount is no longer available',res);
+            return
+        }
+
+        let updateResponse = await DB.updateRecords('discounts',{owner_id: user_id, status: 'allocated'});
+
+        Respond('DISCOUNT_ADDED',{},res);
+    }
+    catch(error)
+    {
+        console.log(error)
+        InternalServerError(res);
+    }
+})
+
+//#endregion
 
 //#region stripe related 
 app.post('/AddPaymentMethod', verifyToken, async (req, res) => {
@@ -747,7 +901,6 @@ async function verifyToken(req, res, next) {
     next();
 }
 
-
 function CheckDiscountHasExpired(discount) {
     var epoch = Math.round(new Date().getTime() / 1000);
     return (epoch - discount.expiry) < 3600 * 24 * 2;
@@ -757,6 +910,42 @@ function Output(success, message, res) {
     var response = { success: success, output: message };
     res.status(200);
     res.json(response);
+}
+
+function Respond(status='SUCCESS',data={}, res, code = 200)
+{
+    var response = {
+        status : status,
+        data : data
+    }
+
+    res.status(code);
+    res.json(response);
+}
+
+function Error(status, statusText, message, res, code = 400)
+{
+    var response = {
+        status : 'ERROR',
+        error : {
+            status : status,
+            statusText : statusText,
+            message: message
+        }
+    }
+
+    res.status(code);
+    res.json(response);
+}
+
+function InternalServerError(res)
+{
+    res.status(500);
+    res.json({status: 'EXCEPTION', error: {
+        status: 'SERVER_ERROR',
+        statusText: 'Server Error',
+        message: 'An internal server error has occured. Please try again later'
+    }})
 }
 
 function CheckRequiredFields(object) {
