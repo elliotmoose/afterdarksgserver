@@ -9,7 +9,7 @@ app.use('/api',api);
 app.use(express.static(path.join(__dirname, "public")));
 app.use('/scripts', express.static(__dirname + '/node_modules'));
 
-app.listen(80);
+// app.listen(80);
 
 
 const domain = 'afterdarksg.com';
@@ -37,7 +37,6 @@ const configs = {
 //     var port = server.address().port;
 //     console.log("%s host listening on port %s", host, port);
 // });
-
 
 if (config.https) {
     //Create server over HTTPS
