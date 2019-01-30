@@ -122,7 +122,7 @@ app.get('/GetImageForMerchant/:id', (req, res) => {
 app.post('/GetWalletForUser', verifyToken, async (req, res) => {
     let user_id = req.user_id;
     try {
-        let tickets = await DB.getRecords('tickets', { owner_id: user_id });
+        let tickets = await DB.getRecords('tickets', { owner_id: user_id, status: 'allocated'});
         // let discounts = await DB.getRecords('discounts',{owner_id: user_id});
 
         let output = {
@@ -150,10 +150,17 @@ app.post('/GetWalletForUser', verifyToken, async (req, res) => {
                     }
                 }
             }
-
-
         }
 
+        let discounts = await DB.getRecords('discounts',{owner_id: user_id, status: 'allocated'})
+
+        for(let discount of discounts)
+        {
+            let discount_meta = await DB.getRecord('discounts_meta',{id: discount.meta_id})
+            if(!discount_meta) continue;
+            discount.meta = discount_meta;
+            output.discounts.push(discount)
+        }
 
         Output(true, output, res)
     }
@@ -634,7 +641,7 @@ app.post('/CreateDiscount', async (req,res)=>{
     let count = req.body.count
     let merchant_id = req.body.merchant_id
     let exclusive = req.body.exclusive
-    let rating = req.body.rating
+    let priority = req.body.priority
     let dateCreated = Math.round(new Date().getTime() / 1000);
 
     try {
@@ -645,7 +652,7 @@ app.post('/CreateDiscount', async (req,res)=>{
                 count: count,
                 merchant_id: merchant_id,
                 exclusive: exclusive,
-                rating: rating,
+                priority: priority,
                 amount: amount
             })
         } catch (error) {
@@ -658,7 +665,7 @@ app.post('/CreateDiscount', async (req,res)=>{
             description: description,
             merchant_id: merchant_id,
             exclusive: exclusive,
-            rating: rating,
+            priority: priority,
             amount: amount
         })
         
@@ -724,16 +731,36 @@ app.post('/AddToWallet',verifyToken, async (req,res)=>{
             return
         }
 
-        let discountToAllocate = await DB.getRecord('discounts',{status: 'available'});
+        //check if user owns this discount
+        let currentlyOwned = await DB.getRecords('discounts',{meta_id: discount_id, owner_id: user_id, status: 'allocated'})
 
-        if(!discountToAllocate)
+        if(currentlyOwned && currentlyOwned.length && currentlyOwned.length > 0)
+        {
+            Error('ALREADY_OWNED','Already Owned','You have already added this discount to your wallet',res);
+            return
+        }
+
+        //check number discounts user has
+        let userDiscountsCount = await DB.query('SELECT COUNT(*) FROM discounts WHERE owner_id=? AND status=\'allocated\'', [user_id]);
+
+        if(userDiscountsCount && userDiscountsCount[0] && userDiscountsCount[0]['COUNT(*)'] >= 4)
+        {
+            Error('WALLET_FULL','Wallet Full','You must use some discounts before adding new ones',res);
+            return
+        }
+
+        let discountsAvailable = await DB.getRecords('discounts',{status: 'available', meta_id: discount_id});
+
+        if(!Array.isArray(discountsAvailable) || discountsAvailable.length == 0)
         {
             Error('DISCOUNT_UNAVAILABLE','Discount Unavailable','The requested discount is no longer available',res);
             return
         }
 
-        let updateResponse = await DB.updateRecords('discounts',{owner_id: user_id, status: 'allocated'});
+        let discountToAllocate = discountsAvailable[0];
 
+        let updateResponse = await DB.updateRecords('discounts',{owner_id: user_id, status: 'allocated'},{id: discountToAllocate.id});
+        console.log(`ADDED DISCOUNT owner_id: ${user_id} discount_id: ${discount_id}`);
         Respond('DISCOUNT_ADDED',{},res);
     }
     catch(error)
@@ -743,6 +770,70 @@ app.post('/AddToWallet',verifyToken, async (req,res)=>{
     }
 })
 
+
+app.post('/ClaimDiscount', verifyToken, async (req,res)=>{
+    let user_id = req.user_id;
+    let discount_id = req.body.discount_id;
+    let merchant_code = req.body.merchant_code;
+
+    try {
+        try {
+            CheckRequiredFields({
+                user_id : user_id,
+                discount_id : discount_id,
+                merchant_code: merchant_code
+            })
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields',error,res);
+            return
+        }
+
+
+        let discount = await DB.getRecord('discounts',{id: discount_id})
+        
+        if(!discount)
+        {
+            Error('DISCOUNT_MISSING','Discount Missing','The requested discount does not exist.', res);
+            return
+        }
+
+        let discount_meta = await DB.getRecord('discounts_meta',{id: discount.meta_id});
+
+        if(!discount_meta)
+        {
+            Error('DISCOUNT_MISSING','Discount Missing','The requested discount does not exist.', res);
+            return
+        }
+
+        if(discount.owner_id != user_id)
+        {
+            Error('DISCOUNT_OWNER_MISMATCH','Discount Owner Mismatch','The discount does not belong to this user.', res);
+            return
+        }
+
+        let merchant = await DB.getRecord('merchants',{id: discount_meta.merchant_id})
+
+        if(!merchant)
+        {
+            Error('MERCHANT_MISSING','Merchant Missing','The merchant no longer exists', res);
+            return
+        }
+
+        if(merchant.passcode != merchant_code)
+        {
+            Error('INVALID_MERCHANT_CODE','Wrong Code','The specified code is wrong. Please try again.', res)
+            return
+        }
+
+        let updateResponse = await DB.updateRecords('discounts',{status: 'claimed'},{id: discount_id});        
+
+        Respond('DISCOUNT_CLAIMED',{id: discount_id},res);
+
+    } catch (error) {
+        console.log(error);
+        InternalServerError(res);
+    }
+})
 //#endregion
 
 //#region stripe related 

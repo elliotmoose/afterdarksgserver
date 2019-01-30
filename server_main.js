@@ -7,4 +7,4 @@ app.use('/api',api);
 app.use(express.static(path.join(__dirname, "public")));
 app.use('/scripts', express.static(__dirname + '/node_modules'));
 
-app.listen(8080);
+app.listen(80);
