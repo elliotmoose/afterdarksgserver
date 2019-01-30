@@ -35,7 +35,6 @@ const domain = 'afterdarksg.com';
 //     console.log("%s host listening on port %s", host, port);
 // });
 
-console.log(config)
 if (config.https) {
     //Create server over HTTPS
     var fs = require('fs');
@@ -48,6 +47,8 @@ if (config.https) {
 
     //Redirect HTTP connections to HTTPS server
     http.createServer(function (req, res) {
+        console.log(req.headers['host'])
+        console.log(req.url)
         res.writeHead(301, {
             'Location': 'https://' + req.headers['host'] + req.url
         });
@@ -55,6 +56,8 @@ if (config.https) {
     }).listen(config.port);
 
     //Start the server over HTTPS
+    console.log(`PORT: ${config.SSLPORT}`);
+    console.log(options);
     var server = https.createServer(options, app).listen(config.SSLPORT, function () {
         var host = server.address().address;
         var port = server.address().port;
