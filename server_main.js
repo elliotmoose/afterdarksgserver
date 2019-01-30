@@ -3,7 +3,8 @@ const path = require('path');
 const app = express();
 const api = require('./api');
 const config = require('./config');
-var https = require('https');
+const https = require('https');
+const http = require('http');
 
 app.use('/api',api);
 app.use(express.static(path.join(__dirname, "public")));
