@@ -1,5 +1,5 @@
 const configs = {
-    https : false,
+    https : true,
     port: 80,
     SSLPORT: 443,
     domain: 'afterdarksg.com'
