@@ -1,12 +1,12 @@
 const express = require('express');
 const path = require('path');
 const app = express();
-const api = require('./api');
+const api_v1 = require('./api_v1');
 const config = require('./config');
 const https = require('https');
 const http = require('http');
 
-app.use('/api',api);
+app.use('/api/v1',api_v1);
 app.use(express.static(path.join(__dirname, "public")));
 app.use('/scripts', express.static(__dirname + '/node_modules'));
 
