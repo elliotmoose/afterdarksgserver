@@ -1,4 +1,5 @@
 const MySQLDriver = require('mysqldriver');
+const config = require('./config');
 var mysql = require('mysql');
 
 var con;
@@ -21,15 +22,15 @@ module.exports.Connect = function() {
 
 var DB;
 module.exports.ConnectWithDriver = function(){     
-    const config = {
+    const dbconfig = {
         host: "localhost",
-        user: "mooselliot",
-        password: "S9728155f",
+        user: config.localdebug ? "mooselliot" : "afterdarksg",
+        password: config.localdebug ? "S9728155f" : "Rahultheman97",
         database: "afterdarksg",
         port: 3306
     }
 
-    DB = new MySQLDriver(config);
+    DB = new MySQLDriver(dbconfig);
     console.log('connected to database')
     return DB    
 }

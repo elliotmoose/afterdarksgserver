@@ -12,29 +12,6 @@ app.use('/scripts', express.static(__dirname + '/node_modules'));
 
 // app.listen(80);
 
-const domain = 'afterdarksg.com';
-//Create server over HTTPS
-
-// https.createServer(options, app)
-//   .listen(80, function () {
-//     console.log('Example app listening on port 80! Go to https://localhost/')
-//   })
-
-// //Redirect HTTP connections to HTTPS server
-// http.createServer(function (req, res) {
-//     res.writeHead(301, {
-//         "Location": "https://" + req.headers['host'] + req.url
-//     });
-//     res.end();
-// }).listen(config.port);
-
-//Start the server over HTTPS
-// var server = https.createServer(options, app).listen(config.SSLPORT, function () {
-//     var host = server.address().address;
-//     var port = server.address().port;
-//     console.log("%s host listening on port %s", host, port);
-// });
-
 if (config.https) {
     //Create server over HTTPS
     var fs = require('fs');

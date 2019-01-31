@@ -1,4 +1,5 @@
 const configs = {
+    localdebug : false,
     https : true,
     port: 80,
     SSLPORT: 443,
@@ -7,5 +8,10 @@ const configs = {
 
 configs.SSL_PK_PATH = `/etc/letsencrypt/live/${configs.domain}/privkey.pem`;
 configs.SSL_CERT_PATH = `/etc/letsencrypt/live/${configs.domain}/cert.pem`;
+
+if(configs.localdebug)
+{
+    configs.https = false;
+}
 
 module.exports = configs;
