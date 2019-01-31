@@ -704,7 +704,7 @@ app.post('/DeleteDiscount', async (req,res)=>{
 })
 
 app.get('/MigrateDiscounts', async(req,res) => {
-    
+        
     let dateCreated = Math.round(new Date().getTime() / 1000);
     try {
         let discounts_meta = await DB.getRecords('discounts_meta');
@@ -717,7 +717,7 @@ app.get('/MigrateDiscounts', async(req,res) => {
                 await DB.insertRecord('discounts',{
                     meta_id : discount.id,
                     status: 'available',
-                    dateCreated: dateCreated
+                    date_created: dateCreated
                 })
             }
         }
