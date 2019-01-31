@@ -703,6 +703,31 @@ app.post('/DeleteDiscount', async (req,res)=>{
     }
 })
 
+app.get('/MigrateDiscounts', async(req,res) => {
+    
+    let dateCreated = Math.round(new Date().getTime() / 1000);
+    try {
+        let discounts_meta = await DB.getRecords('discounts_meta');
+        for(let discount of discounts_meta)
+        {
+            let numberOfDiscountsToPopulate = discount.curAvailCount;
+
+            for(let i=0;i<numberOfDiscountsToPopulate;i++)
+            {
+                await DB.insertRecord('discounts',{
+                    meta_id : discount.id,
+                    status: 'available',
+                    dateCreated: dateCreated
+                })
+            }
+        }
+
+        Respond('SUCCESS',{},res)
+    } catch (error) {
+        console.log(error);
+        Error('FAILED',error,'nah',res);
+    }
+})
 //#endregion
 
 //#region discount allocation
