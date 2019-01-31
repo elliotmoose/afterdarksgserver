@@ -122,7 +122,8 @@ app.get('/GetImageForMerchant/:id', (req, res) => {
 app.post('/GetWalletForUser', verifyToken, async (req, res) => {
     let user_id = req.user_id;
     try {
-        let tickets = await DB.getRecords('tickets', { owner_id: user_id, status: 'allocated'});
+        // let tickets = await DB.getRecords('tickets', { owner_id: user_id, status: 'allocated'});
+        let tickets = await DB.getRecords('tickets', { owner_id: user_id});
         // let discounts = await DB.getRecords('discounts',{owner_id: user_id});
 
         let output = {
@@ -384,6 +385,7 @@ app.post('/CreateTicket', async (req, res) => {
             name: name,
             description: description,
             event_id: event_id,
+            price : price,
             date_created: dateCreated
         });
 
@@ -565,7 +567,7 @@ app.post('/VerifyTicket', verifyToken, async (req, res) => {
     let merchant_user_id = req.user_id;
     let ticket_id = req.body.ticket_id;
     let signature = req.body.signature; //ticket signature
-    ticket_id = 2;
+    
     try {
         //verify signature
         let ticket_is_valid = await bcrypt.compare(`${TICKET_SECRET}${ticket_id}`, signature);
@@ -745,7 +747,7 @@ app.post('/AddToWallet',verifyToken, async (req,res)=>{
 
         if(userDiscountsCount && userDiscountsCount[0] && userDiscountsCount[0]['COUNT(*)'] >= 4)
         {
-            Error('WALLET_FULL','Wallet Full','You must use some discounts before adding new ones',res);
+            Error('WALLET_FULL','Wallet Full','You can only have a maxium of 4 discounts at once. Use some discounts before adding new ones',res);
             return
         }
 
@@ -761,7 +763,19 @@ app.post('/AddToWallet',verifyToken, async (req,res)=>{
 
         let updateResponse = await DB.updateRecords('discounts',{owner_id: user_id, status: 'allocated'},{id: discountToAllocate.id});
         console.log(`ADDED DISCOUNT owner_id: ${user_id} discount_id: ${discount_id}`);
-        Respond('DISCOUNT_ADDED',{},res);
+
+
+        let discounts = await DB.getRecords('discounts',{owner_id: user_id, status: 'allocated'})
+        let user_discounts = []
+        for(let discount of discounts)
+        {
+            let discount_meta = await DB.getRecord('discounts_meta',{id: discount.meta_id})
+            if(!discount_meta) continue;
+            discount.meta = discount_meta;
+            user_discounts.push(discount)
+        }
+
+        Respond('DISCOUNT_ADDED',user_discounts,res);
     }
     catch(error)
     {
@@ -827,7 +841,17 @@ app.post('/ClaimDiscount', verifyToken, async (req,res)=>{
 
         let updateResponse = await DB.updateRecords('discounts',{status: 'claimed'},{id: discount_id});        
 
-        Respond('DISCOUNT_CLAIMED',{id: discount_id},res);
+        let discounts = await DB.getRecords('discounts',{owner_id: user_id, status: 'allocated'})
+        let user_discounts = []
+        for(let discount of discounts)
+        {
+            let discount_meta = await DB.getRecord('discounts_meta',{id: discount.meta_id})
+            if(!discount_meta) continue;
+            discount.meta = discount_meta;
+            user_discounts.push(discount)
+        }
+
+        Respond('DISCOUNT_CLAIMED',user_discounts,res);
 
     } catch (error) {
         console.log(error);
