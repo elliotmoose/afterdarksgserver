@@ -17,6 +17,7 @@ app.use(bodyParse.urlencoded({ extended: false }));
 const JWT_SECRET = 'gskradretfa'
 const TICKET_SECRET = 'gskradretfa'
 const EXPIRY_PERIOD = 3600 * 24 * 2; //24 hours
+// const EXPIRY_PERIOD = 15; //24 hours
 const SALT_ROUNDS = 10;
 
 // Handles request to root only.
@@ -120,6 +121,7 @@ app.get('/GetImageForMerchant/:id', (req, res) => {
 
 //#region get user data
 app.post('/GetWalletForUser', verifyToken, async (req, res) => {
+    let now = Math.round(new Date().getTime() / 1000);
     let user_id = req.user_id;
     try {
         // let tickets = await DB.getRecords('tickets', { owner_id: user_id, status: 'allocated'});
@@ -157,9 +159,16 @@ app.post('/GetWalletForUser', verifyToken, async (req, res) => {
 
         for(let discount of discounts)
         {
+            //check for expiries
+            if((now-discount.date_allocated) > EXPIRY_PERIOD)
+            {
+                await DB.updateRecords('discounts',{status: 'expired'},{id: discount.id})
+                continue //dont include
+            }
             let discount_meta = await DB.getRecord('discounts_meta',{id: discount.meta_id})
             if(!discount_meta) continue;
             discount.meta = discount_meta;
+            discount.expiry = new Date((discount.date_allocated + EXPIRY_PERIOD)*1000).toLocaleString('en-US')
             output.discounts.push(discount)
         }
 
@@ -186,7 +195,8 @@ app.post('/Login', async (req, res) => {
             let merchantPassIsCorrect = await bcrypt.compare(password, merchantData.password);
             if(!merchantPassIsCorrect)
             {
-                throw "Invalid Password"
+                Error('AUTHENTICATION_FAILED','Wrong Username/Password','The username/password is incorrect',res);
+                return
             }
 
             console.log(`MERCHANT LOGGED IN: ${username}`);
@@ -195,7 +205,7 @@ app.post('/Login', async (req, res) => {
             merchantData.type = 'MERCHANT'
             let token = await jwt.sign({id: merchantData.id, email: merchantData.email}, JWT_SECRET);
             merchantData.token = token;
-            Output(true,merchantData,res);
+            Respond('LOGIN_SUCCESS',merchantData,res);
             return
         }
 
@@ -203,40 +213,43 @@ app.post('/Login', async (req, res) => {
         var userData = await DB.getRecord('users', { username: username });
         if (userData === undefined) //username doesnt exist
         {
-            throw "Invalid Username"
+            Error('AUTHENTICATION_FAILED','Wrong Username/Password','The username/password is incorrect',res);
+            return
         }
 
         var correctPass = await bcrypt.compare(password, userData.password)
 
         if (!correctPass) {
-            throw "Invalid Password"
+            Error('AUTHENTICATION_FAILED','Wrong Username/Password','The username/password is incorrect',res);
+            return
         }
-
-        console.log(`USER LOGGED IN: ${username}`);
 
         userData.password = undefined
         userData.type = 'USER'
         let token = await jwt.sign({ id: userData.id, email: userData.email }, JWT_SECRET);
         userData.token = token;
-        Output(true, userData, res);
+        Respond('LOGIN_SUCCESS',userData,res);
     }
     catch (err) {
         console.log(err);
-        Output(false, err, res);
+        InternalServerError(res)
     }
 })
 
 app.post('/FacebookLogin', async (req, res) => {
-    var id = req.body.id;
-    var email = req.body.email;
-    var name = req.body.name;
-    var age = req.body.age;
-    var gender = req.body.gender;
-    var dateBegin = Math.round(new Date().getTime() / 1000);
 
     try {
-        var userResult = await DB.getRecord('facebook_users', { id: id });
+        
+        var id = req.body.id;
+        var email = req.body.email;
+        var name = req.body.name;
+        var age = req.body.age;
+        var gender = req.body.gender;
+        var dateBegin = Math.round(new Date().getTime() / 1000);
 
+
+        var userResult = await DB.getRecord('facebook_users', { id: id });
+        
         if (userResult !== undefined) //User exists, logging in
         {
             let existingADUser = await DB.getRecord('users', { email: email })
@@ -244,10 +257,9 @@ app.post('/FacebookLogin', async (req, res) => {
             if (userResult.email != email) //user has id, but email mismatches with fb db. meaning user changed email
             {
                 //we then want to help user update. but we need to also check if the email has been used to create another afterdark user account
-
-                if (existingADUser !== undefined || existingADMerchant !== undefined) //there exists a user with that email already
+                if (existingADUser || existingADMerchant) //there exists a user with that email already
                 {
-                    Output(false, 'It seems your Facebook email has changed. The new email has already been used to create an Afterdark account.', res)
+                    Error('REGISTRATION_CONFLICT','Email Changed','It seems your Facebook email has changed. The new email has already been used to create an Afterdark account.',res)
                     return
                 }
                 else {
@@ -256,33 +268,31 @@ app.post('/FacebookLogin', async (req, res) => {
                 }
             }
 
-            console.log('Facebook User Logged In')
             let token = await jwt.sign({ id: existingADUser.id, email: existingADUser.email }, JWT_SECRET);
             existingADUser.token = token;
-            Output(true, existingADUser, res);
+            Respond('LOGIN_SUCCESS',existingADUser,res);
         }
         else //User does not exist, generate an account
         {
             let userWithSameEmail = await DB.getRecord('users', { email: email })
 
             if (userWithSameEmail !== undefined) {
-                Output(false, "Your Facebook email has already been used to create an account", res)
+                Error('REGISTRATION_CONFLICT','Email Taken','Your Facebook email has already been used to create an account',res)
                 return
             }
 
             await DB.insertRecord('users', { email: email, gender: gender, age: age, date_begin: dateBegin })
             let newUserData = await DB.getRecord('users', { email: email });
             await DB.insertRecord('facebook_users', { id: id, afterdark_id: newUserData.id, email: email, name: name, age: age, gender: gender, date_begin: dateBegin })
-            console.log('Facebook User Created')
 
             let token = await jwt.sign({ id: newUserData.id, email: newUserData.email }, JWT_SECRET);
             newUserData.token = token;
-            Output(true, newUserData, res);
+            Respond('LOGIN_SUCCESS',newUserData,res);
         }
     }
     catch (err) {
         console.log(err)
-        Output(false, err, res);
+        InternalServerError(res)
     }
 })
 
@@ -703,9 +713,17 @@ app.post('/DeleteDiscount', async (req,res)=>{
     }
 })
 
-app.get('/MigrateDiscounts', async(req,res) => {
+app.post('/MigrateDiscounts', async(req,res) => {
         
     let dateCreated = Math.round(new Date().getTime() / 1000);
+    let secret = req.body.secret;
+
+    if(secret !== JWT_SECRET)
+    {
+        Respond('WRONG_SECRET',{},res);
+        return
+    }
+
     try {
         let discounts_meta = await DB.getRecords('discounts_meta');
         for(let discount of discounts_meta)
@@ -735,6 +753,7 @@ app.get('/MigrateDiscounts', async(req,res) => {
 app.post('/AddToWallet',verifyToken, async (req,res)=>{
     let user_id = req.user_id;
     let discount_id = req.body.discount_id;
+    let date = Math.round(new Date().getTime() / 1000);
 
     try 
     {
@@ -786,7 +805,7 @@ app.post('/AddToWallet',verifyToken, async (req,res)=>{
 
         let discountToAllocate = discountsAvailable[0];
 
-        let updateResponse = await DB.updateRecords('discounts',{owner_id: user_id, status: 'allocated'},{id: discountToAllocate.id});
+        let updateResponse = await DB.updateRecords('discounts',{owner_id: user_id, status: 'allocated', date_allocated: date},{id: discountToAllocate.id});
         console.log(`ADDED DISCOUNT owner_id: ${user_id} discount_id: ${discount_id}`);
 
 
@@ -814,6 +833,7 @@ app.post('/ClaimDiscount', verifyToken, async (req,res)=>{
     let user_id = req.user_id;
     let discount_id = req.body.discount_id;
     let merchant_code = req.body.merchant_code;
+    let date = Math.round(new Date().getTime() / 1000);
 
     try {
         try {
@@ -864,7 +884,7 @@ app.post('/ClaimDiscount', verifyToken, async (req,res)=>{
             return
         }
 
-        let updateResponse = await DB.updateRecords('discounts',{status: 'claimed'},{id: discount_id});        
+        let updateResponse = await DB.updateRecords('discounts',{status: 'claimed', date_claimed: date},{id: discount_id});        
 
         let discounts = await DB.getRecords('discounts',{owner_id: user_id, status: 'allocated'})
         let user_discounts = []
@@ -1012,7 +1032,7 @@ app.post('/RetrieveStripeCustomer', verifyToken, async (req, res) => {
 async function verifyToken(req, res, next) {
     let token = req.headers.authorization;
     if (token === undefined) {
-        Output(false, 'Missing authorization token', res)
+        Error('AUTHENTICATION_MISSING','No Token','Authentication token missing',res);
         return
     }
 
@@ -1034,16 +1054,11 @@ async function verifyToken(req, res, next) {
     }
     catch (error) {
         console.log(error)
-        Output(false, 'Authorization Token Invalid', res);
+        Error('AUTHENTICATION_FAILED','Token Invalid','The given token is invalid',res);
         return
     }
 
     next();
-}
-
-function CheckDiscountHasExpired(discount) {
-    var epoch = Math.round(new Date().getTime() / 1000);
-    return (epoch - discount.expiry) < 3600 * 24 * 2;
 }
 
 function Output(success, message, res) {
@@ -1057,8 +1072,7 @@ function Respond(status='SUCCESS',data={}, res, code = 200)
     var response = {
         status : status,
         data : data
-    }
-
+    }    
     res.status(code);
     res.json(response);
 }
