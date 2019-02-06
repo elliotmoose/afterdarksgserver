@@ -7,7 +7,7 @@ const configs = {
 }
 
 configs.SSL_PK_PATH = `/etc/letsencrypt/live/${configs.domain}/privkey.pem`;
-configs.SSL_CERT_PATH = `/etc/letsencrypt/live/${configs.domain}/cert.pem`;
+configs.SSL_CERT_PATH = `/etc/letsencrypt/live/${configs.domain}/fullchain.pem`;
 
 if(configs.localdebug)
 {
