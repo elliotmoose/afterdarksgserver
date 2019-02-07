@@ -1,6 +1,7 @@
 const configs = {
     live : false,
     https : false,
+    remote : false,
     port: 80,
     SSLPORT: 443,
     domain: 'afterdarksg.com'
