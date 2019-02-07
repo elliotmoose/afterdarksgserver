@@ -1,4 +1,6 @@
 const configs = {
+    localdebug : false,
+    https : true,
     live : false,
     https : false,
     remote : false,
@@ -16,4 +18,4 @@ if(configs.remote)
     configs.https = true;
 }
 
-module.exports = configs
+module.exports = configs;
