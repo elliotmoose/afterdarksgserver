@@ -65,6 +65,8 @@
         //     key: 'AIzaSyDNKH8-roQ2pJKqB9CKA9GfMws_AeaHP_o'
         // });
 
+        let config = require('../../config.js')
+        var domain = `${config.https ? 'https' : 'http'}://localhost/api/v1`
         var app = angular.module("main", ["ngMaterial", "ngMessages"]);
         var map;
         var marker;
@@ -76,7 +78,7 @@
 
 
             //get bar details
-            $http.get('http://localhost:8080/GetBarNames').then(function (response) {
+            $http.get(`${domain}/GetMerchants`).then(function (response) {
                 $scope.bars = response.data.output;
             });
 
