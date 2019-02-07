@@ -5,9 +5,9 @@ var DB;
 module.exports.ConnectWithDriver = function(){     
     const dbconfig = {
         host: "localhost",
-        user: config.live ? "afterdarksg" : "mooselliot",
-        password: config.live ? "Rahultheman97" : "S9728155f",
-        database: config.live ? "afterdarksg" : "afterdarksg_test",
+        user: config.remote ? "afterdarksg" : "mooselliot",
+        password: config.remote ? "Rahultheman97" : "S9728155f",
+        database: config.remote ? "afterdarksg" : "afterdarksg_test",
         port: 3306
     }
 

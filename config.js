@@ -11,7 +11,7 @@ configs.SSL_PK_PATH = `/etc/letsencrypt/live/${configs.domain}/privkey.pem`;
 configs.SSL_CERT_PATH = `/etc/letsencrypt/live/${configs.domain}/fullchain.pem`;
 
 
-if(configs.live)
+if(configs.remote)
 {
     configs.https = true;
 }
