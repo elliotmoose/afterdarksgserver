@@ -1,6 +1,6 @@
 const configs = {
     localdebug : false,
-    https : true,
+    https : false,
     port: 80,
     SSLPORT: 443,
     domain: 'afterdarksg.com'
