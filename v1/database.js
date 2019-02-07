@@ -7,7 +7,7 @@ module.exports.ConnectWithDriver = function(){
         host: "localhost",
         user: config.remote ? "afterdarksg" : "mooselliot",
         password: config.remote ? "Rahultheman97" : "S9728155f",
-        database: config.remote ? "afterdarksg" : "afterdarksg_test",
+        database: (config.live && config.remote) ? "afterdarksg" : "afterdarksg_test",
         port: 3306
     }
 
