@@ -1,3 +1,5 @@
+process.env.TZ = 'Singapore'
+
 const configs = {
     https : false,
     live : false,
