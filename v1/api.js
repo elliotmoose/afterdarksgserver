@@ -32,10 +32,10 @@ app.get('/', (req, res) => {
 app.get('/GetMerchants', async (req, res) => {
     try {
         var merchantsResult = await DB.getRecords('merchants');
-        Output(true, merchantsResult, res);
+        Respond('RETRIEVED_MERCHANTS',merchantsResult,res);
     }
     catch (err) {
-        Output(false, err, res);
+        InternalServerError(res,err);
     }
 });
 
@@ -58,10 +58,10 @@ app.get('/GetDiscounts', async (req, res) => {
             }
         }
 
-        Output(true, discounts, res);
+        Respond('RETRIEVED_DISCOUNTS',discounts,res);
     }
     catch (err) {
-        Output(false, err, res);
+        InternalServerError(res,err);
     }
 });
 
@@ -91,10 +91,10 @@ app.get('/GetEvents', async (req, res) => {
             }
         }
 
-        Output(true, events, res);
+        Respond('RETRIEVED_EVENTS',events,res);
     }
     catch (err) {
-        Output(false, err, res);
+        InternalServerError(res,err);
     }
 });
 
@@ -105,7 +105,7 @@ app.get('/GetImageForMerchant/:id', (req, res) => {
         Output(false, "No merchant id specified", res);
     }
 
-    var imagePath = path.resolve(__dirname, "merchant_images/" + id + "/0.jpg");
+    var imagePath = path.resolve(__dirname, "../merchant_images/" + id + "/0.jpg");
 
     if (fs.existsSync(imagePath)) {
         // console.log(`image for: ${id}`)
@@ -128,7 +128,7 @@ app.post('/GetWalletForUser', verifyToken, async (req, res) => {
         let tickets = await DB.getRecords('tickets', { owner_id: user_id});
         // let discounts = await DB.getRecords('discounts',{owner_id: user_id});
 
-        let output = {
+        let wallet = {
             tickets: [],
             discounts: []
         }
@@ -149,7 +149,7 @@ app.post('/GetWalletForUser', verifyToken, async (req, res) => {
                         ticket.meta = ticket_meta;
                         ticket.event = event;
                         ticket.merchant = merchant;
-                        output.tickets.push(ticket);
+                        wallet.tickets.push(ticket);
                     }
                 }
             }
@@ -169,14 +169,13 @@ app.post('/GetWalletForUser', verifyToken, async (req, res) => {
             if(!discount_meta) continue;
             discount.meta = discount_meta;
             discount.expiry = new Date((discount.date_allocated + EXPIRY_PERIOD)*1000).toLocaleString('en-US')
-            output.discounts.push(discount)
+            wallet.discounts.push(discount)
         }
 
-        Output(true, output, res)
+        Respond('RETRIEVED_WALLET',wallet,res);
     }
     catch (error) {
-        console.log(error)
-        Output(false, error, res);
+        InternalServerError(res,error);
     }
 });
 
@@ -296,33 +295,6 @@ app.post('/FacebookLogin', async (req, res) => {
     }
 })
 
-app.post('/RetrieveCustomer', async (req, res) => {
-    let ad_userid = req.body.id;
-    let token = req.body.token;
-    let email = req.body.email;
-
-    try {
-        CheckRequiredFields({ ad_userid, token, email });
-
-        //step 1: check if user has a customer
-        let ad_customer = await DB.getRecord('stripe_customers', { afterdark_id: ad_userid })
-
-        //step 2a: if has, return customer id
-        if (ad_customer !== undefined) {
-            let customer_id = ad_customer.stripe_customer_id;
-            Output(true, customer_id, res);
-        }
-        else //step 2b: if not, create customer
-        {
-            let customer = await adstripe.createCustomer(email, token);
-            await DB.insertRecord('stripe_customers', { afterdark_id: ad_userid, stripe_customer_id: customer.id })
-        }
-    }
-    catch (error) {
-        Output(false, error, res)
-    }
-})
-
 app.post('/Register', async (req, res) => {
     let username = req.body.username
     let password = req.body.password
@@ -332,9 +304,14 @@ app.post('/Register', async (req, res) => {
     let dateBegin = Math.round(new Date().getTime() / 1000);
 
     try {
-        CheckRequiredFields({ username, password, email });
-        let usernameRecords = await DB.getRecord('users', { username: username })
-        let merchantUsernameRecord = await DB.getRecord('merchant_users', { username: username }) //check against merchants in case        
+        try {            
+            CheckRequiredFields({ username, password, email });
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields',error,res);
+            return
+        }
+        let usernameRecords = await DB.getRecord('users', { username: username });
+        let merchantUsernameRecord = await DB.getRecord('merchant_users', { username: username }); //check against merchants in case        
 
         if (usernameRecords === undefined && merchantUsernameRecord === undefined) {
             let emails = await DB.getRecord('users', { email: email })
@@ -349,19 +326,21 @@ app.post('/Register', async (req, res) => {
                 userData.password = undefined
                 let token = await jwt.sign({ id: userData.id, email: userData.email }, JWT_SECRET);
                 userData.token = token;
-                Output(true, userData, res)
+                Respond('REGISTER_SUCCESS',userData,res);
             }
-            else {
-                throw 'Email already exists';
+            else {        
+                Error('REGISTRATION_CONFLICT','Email Taken', 'The email you have specificed has already been used.',res);
+                return 
             }
         }
         else {
-            throw 'Username already taken';
+            Error('REGISTRATION_CONFLICT','Username Taken', 'The username you have specificed has already been used.',res);
+            return 
         }
     }
     catch (e) {
         console.log(e)
-        Output(false, e, res)
+        InternalServerError(res);
     }
 })
 
@@ -377,18 +356,24 @@ app.post('/CreateTicket', async (req, res) => {
     let dateCreated = Math.round(new Date().getTime() / 1000);
 
     try {
-        CheckRequiredFields({
-            name: name,
-            description: description,
-            count: count,
-            price: price,
-            event_id: event_id,
-        })
+        try {
+            CheckRequiredFields({
+                name: name,
+                description: description,
+                count: count,
+                price: price,
+                event_id: event_id,
+            })            
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields',error,res);
+            return
+        }
 
         let checkEvent = await DB.getRecord('events', { id: event_id })
 
-        if (checkEvent === undefined) {
-            throw 'The event you are trying to create a ticket for does not exist';
+        if (!checkEvent) {
+            Error('EVENT_MISSING','Event Missing','The requested event does not exist.',res)
+            return
         }
 
         let ticket_meta = await DB.insertRecord('tickets_meta', {
@@ -412,11 +397,11 @@ app.post('/CreateTicket', async (req, res) => {
                 })
         }
 
-        Output(true, ticket_meta, res)
+        Respond('TICKET_CREATED',ticket_meta,res);
     }
     catch (error) {
-        console.log(error)
-        Output(false, error, res)
+        console.log(error);
+        InternalServerError(res);
     }
 })
 
@@ -426,8 +411,9 @@ app.post('/DeleteEvent', async (req, res) => {
     try {
         let getEvent = await DB.getRecord('events', { id: event_id });
 
-        if (getEvent === undefined) {
-            throw "The event does not exist";
+        if (!getEvent) {
+            Error('EVENT_MISSING','Event Missing','The requested event does not exist',res);
+
         }
 
         let metas = await DB.getRecords('tickets_meta', { event_id: event_id });
@@ -440,12 +426,11 @@ app.post('/DeleteEvent', async (req, res) => {
 
         await DB.deleteRecords('tickets_meta', { event_id: event_id });
         await DB.deleteRecords('events', { id: event_id });
-
-        Output(true, 'Deleted', res);
+        Respond('EVENT_DELETED',{},res);
     }
     catch (err) {
-        console.log(err)
-        Output(false, err, res)
+        console.log(err);
+        InternalServerError(res);
     }
 })
 
@@ -453,13 +438,13 @@ app.post('/DeleteTicket', async (req, res) => {
 
     let ticket_meta_id = req.body.meta_id;
     try {
-        await DB.deleteRecords('tickets_meta', { id: ticket_meta_id })
-        await DB.deleteRecords('tickets', { meta_id: ticket_meta_id })
-        Output(true, 'Deleted', res)
+        await DB.deleteRecords('tickets_meta', { id: ticket_meta_id });
+        await DB.deleteRecords('tickets', { meta_id: ticket_meta_id });
+        Respond('TICKET_DELETED',{},res);
     }
     catch (err) {
-        console.log(err)
-        Output(false, err, res)
+        console.log(err);
+        InternalServerError(res);
     }
 })
 
@@ -474,16 +459,17 @@ app.post('/CreateEvent', async (req, res) => {
     try {
         let merchant = await DB.getRecord('merchants', { id: merchant_id })
 
-        if (merchant === undefined) {
-            throw "Merchant does not exist"
+        if (!merchant) {
+            Error('INVALID_FIELDS','Merchant Missing','The requested merchant does not exist.',res);
+            return;
         }
 
-        let output = await DB.insertRecord('events', { name: name, merchant_id: merchant_id, location: location, time: time, date: date, created: dateCreated })
-        Output(true, output, res)
+        let response = await DB.insertRecord('events', { name: name, merchant_id: merchant_id, location: location, time: time, date: date, created: dateCreated });
+        Respond('EVENT_CREATED', response, res);
     }
     catch (error) {
         console.log(error)
-        Output(false, error, res)
+        InternalServerError(res);
     }
 })
 
@@ -496,24 +482,35 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
     let transaction_token = req.body.transaction_token;
 
     try {
-        CheckRequiredFields({ owner_id, ticket_meta_id });
-        //check owner exists
-        let user = await DB.getRecord('users', { id: owner_id });
-        ThrowWithMessageIfEmpty(user, 'User does not exist')
-        let ticket_meta = await DB.getRecord('tickets_meta', { id: ticket_meta_id })
-        ThrowWithMessageIfEmpty(ticket_meta, 'Ticket does not exist')
-        let event = await DB.getRecord('events', { id: ticket_meta.event_id })
-        ThrowWithMessageIfEmpty(event, 'Event does not exist')
-        //check ticket availability
-        let tickets = await DB.getRecords('tickets', { meta_id: ticket_meta_id, status: 'available' })
-        ThrowWithMessageIfEmpty(tickets, 'There are no more such tickets available')
+        try {
+            CheckRequiredFields({ owner_id, ticket_meta_id });            
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields',error,res);
+            return
+        }
 
-        //purchase
-        // - get stripe customer from adUser_id
-        // - create charge for this customer
-        // - on success, allocate ticket
-        let customer = await DB.getRecord('stripe_customers', { afterdark_id: owner_id });
-        ThrowWithMessageIfEmpty(customer, 'User is not a stripe customer')
+        //check owner exists
+        try {
+            var user = await DB.getRecord('users', { id: owner_id });
+            ThrowWithMessageIfEmpty(user, 'User does not exist. Please login again.')
+            var ticket_meta = await DB.getRecord('tickets_meta', { id: ticket_meta_id })
+            ThrowWithMessageIfEmpty(ticket_meta, 'Ticket no longer exists')
+            var event = await DB.getRecord('events', { id: ticket_meta.event_id })
+            ThrowWithMessageIfEmpty(event, 'Event no longer exists')
+            //check ticket availability
+            var tickets = await DB.getRecords('tickets', { meta_id: ticket_meta_id, status: 'available' })
+            ThrowWithMessageIfEmpty(tickets, 'These tickets are no longer available.')
+    
+            //purchase
+            // - get stripe customer from adUser_id
+            // - create charge for this customer
+            // - on success, allocate ticket
+            var customer = await DB.getRecord('stripe_customers', { afterdark_id: owner_id });
+            ThrowWithMessageIfEmpty(customer, 'User is not a stripe customer.  Please login again.')            
+        } catch (error) {
+            Error('INVALID_FIELDS','Invalid Request',error,res)
+            return
+        }
 
 
         let customer_id = customer.stripe_customer_id;
@@ -522,33 +519,51 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
 
         // console.log(`Charging ${ticket_chargeable} to ${customer_id} for ticket: ${ticket_to_purchase.id}`);
         let charge_description = `${event.name} - ${ticket_meta.name} - id: ${ticket_to_purchase.id}`
-        let charge_response = await adstripe.charge(customer_id, ticket_chargeable, charge_description)
+        try {
+            var charge_response = await adstripe.charge(customer_id, ticket_chargeable, charge_description)            
+        } catch (error) {
+            Error(error.status,error.statusText, error.message,res);
+            return
+        }
 
         if (charge_response.success === true) {
             //record charge
-            let record_charge_response = await DB.insertRecord('charges', {
-                id: charge_response.output.id,
-                customer: charge_response.output.customer,
-                amount: charge_response.output.amount,
-                description: charge_description,
-                date: charge_response.output.created,
-                status: charge_response.output.status,
-                receipt: charge_response.output.receipt_url,
-                stripe_response: JSON.stringify(charge_response.output)
-            });
+            try {
+                let record_charge_response = await DB.insertRecord('charges', {
+                    id: charge_response.data.id,
+                    customer: charge_response.data.customer,
+                    amount: charge_response.data.amount,
+                    description: charge_description,
+                    date: charge_response.data.created,
+                    status: charge_response.data.status,
+                    receipt: charge_response.data.receipt_url,
+                    stripe_response: JSON.stringify(charge_response.data)
+                });                
+            } catch (error) {
+                console.log(error)
+                Error('PURCHASE_FAILED','Purchase Failed','The purchase failed to be recorded. Please Contact Support.',res)                
+                return
+            }
 
-            //allocate ticket 
-            let allocate_response = await DB.updateRecords('tickets', {
-                status: 'allocated',
-                owner_id: owner_id
-            },
+            try {
+                //allocate ticket 
+                let allocate_response = await DB.updateRecords('tickets', {
+                    status: 'allocated',
+                    owner_id: owner_id
+                },
                 {
                     id: ticket_to_purchase.id
                 })
-
-            if (allocate_response.affectedRows == 0) {
-                throw 'Allocation failed at updating ticket owner';
+                    
+                if (allocate_response.affectedRows == 0) {
+                    throw 'Alocation failed'
+                }
+            } catch (error) {
+                console.log(error)
+                Error('PURCHASE_FAILED','Purchase Failed','The ticket failed to allocate. Please Contact Support.',res)                
+                return
             }
+
 
             let ticket_payload = {
                 id: ticket_to_purchase.id,
@@ -557,17 +572,13 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
                 meta: ticket_meta
             }
 
-            console.log(ticket_payload);
-            Output(true, ticket_payload, res);
+            console.log(`Ticket Purchased: ${ticket_payload.id} - Price: $${ticket_payload.price/100}`);
+            Respond('PURCHASE_SUCCESSFUL',ticket_payload,res);
         }
-        else {
-
-        }
-
     }
     catch (error) {
-        console.log(error)
-        Output(false, error, res)
+        console.log(error);
+        InternalServerError(res);
     }
 
 
@@ -720,7 +731,7 @@ app.post('/MigrateDiscounts', async(req,res) => {
 
     if(secret !== JWT_SECRET)
     {
-        Respond('WRONG_SECRET',{},res);
+        Error('WRONG_SECRET','Wrong Secret','The provided secret is invalid',res);
         return
     }
 
@@ -743,7 +754,7 @@ app.post('/MigrateDiscounts', async(req,res) => {
         Respond('SUCCESS',{},res)
     } catch (error) {
         console.log(error);
-        Error('FAILED',error,'nah',res);
+        InternalServerError(res)
     }
 })
 //#endregion
@@ -912,98 +923,148 @@ app.post('/AddPaymentMethod', verifyToken, async (req, res) => {
 
     //find out if user is already a stripe customer
     try {
-        CheckRequiredFields({ card_token: card_token, user_id: user_id });
+        try {
+            CheckRequiredFields({ card_token: card_token, user_id: user_id });            
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields',error,res);
+            return 
+        }
 
-        let customer = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
-        if (customer === undefined) {
+        let adstripecustomer = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
+        if (adstripecustomer === undefined) {
             console.log('Creating new customer...')
             //create customer
             let user = await DB.getRecord('users', { id: user_id })
 
-
-            if (user === undefined || user.email === undefined || user.email === null) {
+            if (!user || !user.email) {
                 console.log(`no user with id ${user_id}`)
-                throw 'User does not exist'
+                Error('USER_MISSING','User Missing','The requested user does not exist',res);
+                return
             }
 
-            let customer = await adstripe.createCustomer(user.email, card_token);
-            let newCustomerResponse = await DB.insertRecord('stripe_customers', { afterdark_id: user_id, stripe_customer_id: customer.id })
-            let stripe_customer_data = await adstripe.retrieveCustomer(customer.id);
-            Output(true, stripe_customer_data, res);
+            try {
+                var customer = await adstripe.createCustomer(user.email, card_token);
+            } catch (error) {
+                Error(error.status,error.statusText,error.message,res);
+                return;
+            }
+
+            let newCustomerResponse = await DB.insertRecord('stripe_customers', { afterdark_id: user_id, stripe_customer_id: customer.id});
+
+            try {
+                var stripe_customer_data = await adstripe.retrieveCustomer(customer.id);
+            } catch (error) {
+                Error(error.status,error.statusText,error.message,res);
+                return;
+            }
+
+            Respond('PAYMENT_ADDED',stripe_customer_data,res);
         }
         else {
             console.log('Adding source to customer...')
             //add source
-            let cus_token = customer.stripe_customer_id;
+            let cus_token = adstripecustomer.stripe_customer_id;
 
-            if (cus_token === undefined || cus_token === null) {
-                throw 'Database inconsistency: the stripe customer cannot be found. Please contact support'
+            if (!cus_token) {
+                Error('CUSTOMER_MISSING','Customer Missing','The stripe customer cannot be found. Please Contact Support',res);
+                return
             }
 
-            let response = await adstripe.addSourceToCustomer(cus_token, card_token);
-            let stripe_customer_data = await adstripe.retrieveCustomer(cus_token);
-            Output(true, stripe_customer_data, res);
+            try {
+                let response = await adstripe.addSourceToCustomer(cus_token, card_token);
+                var stripe_customer_data = await adstripe.retrieveCustomer(cus_token);    
+            } catch (error) {
+                Error(error.status,error.statusText,error.message,res);
+                return;
+            }
+            
+            Respond('PAYMENT_ADDED',stripe_customer_data,res);
         }
     }
     catch (error) {
         console.log(error);
-        Output(false, error, res);
+        InternalServerError(res);
     }
 })
 
+//normalize
 app.post('/RemovePaymentMethod', verifyToken, async (req, res) => {
     let user_id = req.user_id;
     let card_id = req.body.card_id;
 
     //find out if user is already a stripe customer
     try {
-        CheckRequiredFields({ card_id: card_id, user_id: user_id });
+        try {
+            CheckRequiredFields({ card_id: card_id, user_id: user_id });            
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields',error,res)
+            return
+        }
 
         let customer = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
         let user = await DB.getRecord('users', { id: user_id })
 
-        if (customer === undefined || user === undefined || user.email === undefined || user.email === null) {
-            console.log(`no user with id ${user_id}`)
-            throw 'User does not exist'
-        }
-
         let cus_id = customer.stripe_customer_id;
 
-        let response = await adstripe.removeSourceFromCustomer(cus_id, card_id);
-        let stripe_customer_data = await adstripe.retrieveCustomer(customer.stripe_customer_id);
-        Output(true, stripe_customer_data, res);
+        if (!customer || !customer.stripe_customer_id || !user || !user.email) {
+            console.log(`no user with id ${user_id}`)
+            Error('USER_MISSING','User Missing','The requested User does not exist. Please login again.',res)
+            return
+        }
+        
+        try {
+            
+            let response = await adstripe.removeSourceFromCustomer(cus_id, card_id);
+            let stripe_customer_data = await adstripe.retrieveCustomer(customer.stripe_customer_id);            
+            Respond('PAYMENT_REMOVED',stripe_customer_data, res)
+        } catch (error) {
+            Error(error.status,error.statusText,error.message,res);
+            return
+        }
     }
     catch (error) {
         console.log(error);
-        Output(false, error, res);
+        InternalServerError(res);
     }
 })
 
+//normalize
 app.post('/MakeDefaultPaymentMethod', verifyToken, async (req, res) => {
     let user_id = req.user_id;
     let card_id = req.body.card_id;
 
     //find out if user is already a stripe customer
     try {
-        CheckRequiredFields({ card_id: card_id, user_id: user_id });
+        try {
+            CheckRequiredFields({ card_id: card_id, user_id: user_id });            
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields',error,res)
+            return
+        }
 
         let customer = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
         let user = await DB.getRecord('users', { id: user_id })
 
-        if (customer === undefined || user === undefined || user.email === undefined || user.email === null) {
+        if (!customer || !user || !user.email) {
             console.log(`no user with id ${user_id}`)
-            throw 'User does not exist'
+            Error('USER_MISSING','User Missing','The requested User does not exist. Please login again.',res)
+            return
         }
 
         let cus_id = customer.stripe_customer_id;
 
-        let response = await adstripe.makeDefaultSource(cus_id, card_id);
-        let stripe_customer_data = await adstripe.retrieveCustomer(customer.stripe_customer_id);
-        Output(true, stripe_customer_data, res);
+        try {
+            let response = await adstripe.makeDefaultSource(cus_id, card_id);
+            let stripe_customer_data = await adstripe.retrieveCustomer(customer.stripe_customer_id);            
+            Respond('PAYMENT_CHANGED',stripe_customer_data,res);
+        } catch (error) {
+            Error(error.status,error.statusText,error.message,res);
+            return       
+        }        
     }
     catch (error) {
         console.log(error);
-        Output(false, error, res);
+        InternalServerError(res);
     }
 })
 
@@ -1015,15 +1076,21 @@ app.post('/RetrieveStripeCustomer', verifyToken, async (req, res) => {
         let user = await DB.getRecord('stripe_customers', { afterdark_id: user_id })
 
         if (user === undefined) {
-            throw 'User is not a stripe customer'
+            Error('CUSTOMER_MISSING','User Missing','The requested user is not a stripe customer. Please login again.',res)
+            return
         }
 
-        let customer = await adstripe.retrieveCustomer(user.stripe_customer_id);
-        Output(true, customer, res);
+        try {
+            let customer = await adstripe.retrieveCustomer(user.stripe_customer_id);
+            Respond('RETRIEVED_CUSTOMER',customer,res);
+        } catch (error) {
+            Error(error.status,error.statusText,error.message,res);
+            return
+        }        
     }
     catch (error) {
         console.log(error)
-        Output(false, error, res);
+        InternalServerError(res);
     }
 })
 
@@ -1092,8 +1159,13 @@ function Error(status, statusText, message, res, code = 400)
     res.json(response);
 }
 
-function InternalServerError(res)
+function InternalServerError(res,error)
 {
+    if(error)
+    {
+        console.log(error)
+    }
+    
     res.status(500);
     res.json({status: 'EXCEPTION', error: {
         status: 'SERVER_ERROR',
