@@ -1,8 +1,6 @@
 const configs = {
-    localdebug : false,
     https : true,
     live : false,
-    https : false,
     remote : false,
     port: 80,
     SSLPORT: 443,
