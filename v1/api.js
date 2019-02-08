@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 const express = require('express');
 const app = express.Router();
 
+
 const db = require('./database')
 const DB = db.ConnectWithDriver();
 
@@ -13,6 +14,8 @@ const jwt = require('jsonwebtoken');
 const bodyParse = require('body-parser');
 app.use(bodyParse.json());
 app.use(bodyParse.urlencoded({ extended: false }));
+
+const config = require('../config')
 
 const JWT_SECRET = 'gskradretfa'
 const TICKET_SECRET = 'gskradretfa'
@@ -27,6 +30,32 @@ app.get('/', (req, res) => {
     res.sendFile(path.resolve(__dirname, 'index.html'));
 });
 
+//#region console
+app.get('/console/logs', (req,res)=>{
+    var logsPath = path.resolve("/home/elliotmoose/.forever/serverlogs.log");
+
+    if (fs.existsSync(logsPath)) {
+        // console.log(`image for: ${id}`)
+        res.sendFile(logsPath);
+    }
+    else {
+        // console.log(`no image for: ${id}`)
+        res.status(404);
+        res.send('No logs available')
+    }
+})
+
+
+app.get('/console/config', (req,res)=>{
+    
+    res.json({
+        live : config.live,
+        remote : config.remote,
+        https : config.https,
+    })
+})
+
+//#endregion
 
 //#region get generic data 
 app.get('/GetMerchants', async (req, res) => {
