@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "start:logs" : "sudo forever start -l /home/elliotmoose/.forever/serverlogs.log server.js"
+    "start:logs" : "sudo forever start -l /home/elliotmoose/.forever/serverlogs.log server.js",
+    "start:appendlogs" : "sudo forever start -a -l /home/elliotmoose/.forever/serverlogs.log server.js"
   },
   "repository": {
     "type": "git",
