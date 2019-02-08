@@ -35,7 +35,6 @@ if (config.https) {
 
     //Start the server over HTTPS
     console.log(`PORT: ${config.SSLPORT}`);
-    console.log(options);
     var server = https.createServer(options, app).listen(config.SSLPORT, function () {
         var host = server.address().address;
         var port = server.address().port;
