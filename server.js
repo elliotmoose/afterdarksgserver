@@ -13,6 +13,10 @@ app.use(express.static(path.join(__dirname, "public")))
 // app.use('/scripts', express.static(__dirname + '/node_modules'));
 // app.listen(80);
 
+console.log('===================================================================================================')
+console.log('                                           SERVER STARTED                                      ')
+console.log('===================================================================================================')
+
 if (config.https) {
     //Create server over HTTPS
     var fs = require('fs');
