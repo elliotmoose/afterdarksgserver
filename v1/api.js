@@ -55,6 +55,26 @@ app.get('/console/config', (req,res)=>{
     })
 })
 
+app.get('/console/charges', verifyToken, async (req,res)=>{
+    try {
+        let charges = await DB.getRecords('charges');
+
+        let response = []
+        for(let charge of charges)
+        {
+            response.push({
+                charge_id: charge.id,
+                cus_id: charge.customer,            
+                date : DateFormatPresentable(charge.date),
+                description: charge.description
+            })
+        }
+        Respond('RETRIEVED_CHARGES',response,res);
+    } catch (error) {
+        InternalServerError(res,error)
+    }
+})
+
 //#endregion
 
 //#region get generic data 
@@ -1219,6 +1239,14 @@ function ThrowWithMessageIfEmpty(object, message) {
         console.log('array')
         throw message
     }
+}
+
+function DateFormatPresentable(epoch)
+{
+    let date = new Date(0); // The 0 there is the key, which sets the date to the epoch
+    date.setSeconds(epoch);
+    var options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    return date.toLocaleDateString("en-US", options) + ` - ${date.getHours()}:${date.getMinutes()}`; // Saturday, September 17, 2016
 }
 
 module.exports = app;
