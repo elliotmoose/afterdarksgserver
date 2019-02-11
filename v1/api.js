@@ -344,6 +344,33 @@ app.post('/FacebookLogin', async (req, res) => {
     }
 })
 
+app.post('/SetAdditionalUserData', verifyToken, async (req,res) => {
+    let user_id = req.user_id
+    let gender = req.body.gender == "male" ? 1 : req.body.gender == "female" ? 2 : undefined
+    let age = req.body.age
+
+    try {
+        try {
+            CheckRequiredFields({
+                gender : gender,
+                age : age
+            })
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields', error, res);
+            return
+        }
+
+        let response = await DB.updateRecords('users',{
+            gender : gender,
+            age: age
+        }, {id: user_id})
+
+        Respond('SUCCESS',{},res)
+    } catch (error) {
+        InternalServerError(res, error)
+    }
+})
+
 app.post('/Register', async (req, res) => {
     let username = req.body.username
     let password = req.body.password
@@ -580,6 +607,7 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
             try {
                 let record_charge_response = await DB.insertRecord('charges', {
                     id: charge_response.data.id,
+                    ticket_id: ticket_to_purchase.id,
                     customer: charge_response.data.customer,
                     amount: charge_response.data.amount,
                     description: charge_description,
@@ -1225,7 +1253,7 @@ function InternalServerError(res,error)
 
 function CheckRequiredFields(object) {
     for (var key in object) {
-        if (object[key] === undefined || object[key] === null) {
+        if (object[key] === undefined || object[key] === null || object[key] === '') {
             throw `Required value missing: ${key}`
         }
     }
