@@ -302,7 +302,7 @@ app.post('/FacebookLogin', async (req, res) => {
                 name : name
             })
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields', error)
+            Error('MISSING_FIELDS','Missing Fields', error,res)
         }
 
         var userResult = await DB.getRecord('facebook_users', { id: id });
