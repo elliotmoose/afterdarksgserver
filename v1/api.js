@@ -329,7 +329,10 @@ app.post('/FacebookLogin', async (req, res) => {
                 return
             }
 
-            await DB.insertRecord('users', { email: email, gender: gender, age: age, date_begin: dateBegin })
+            let insertData = { email: email, date_begin: dateBegin }
+            gender && (insertData.gender = gender)
+            age && (insertData.age = age)
+            await DB.insertRecord('users', insertData)
             let newUserData = await DB.getRecord('users', { email: email });
             await DB.insertRecord('facebook_users', { id: id, afterdark_id: newUserData.id, email: email, name: name, age: age, gender: gender, date_begin: dateBegin })
 
