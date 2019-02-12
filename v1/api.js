@@ -295,6 +295,15 @@ app.post('/FacebookLogin', async (req, res) => {
         var gender = req.body.gender;
         var dateBegin = Math.round(new Date().getTime() / 1000);
 
+        try {
+            CheckRequiredFields({
+                id : id,
+                email : email,
+                name : name
+            })
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields', error)
+        }
 
         var userResult = await DB.getRecord('facebook_users', { id: id });
         
