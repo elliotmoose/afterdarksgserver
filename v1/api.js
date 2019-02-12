@@ -19,6 +19,7 @@ const config = require('../config')
 
 const JWT_SECRET = 'gskradretfa'
 const TICKET_SECRET = 'gskradretfa'
+const CONSOLE_SECRET = 'gskradretfa'
 const EXPIRY_PERIOD = 3600 * 24 * 2; //24 hours
 // const EXPIRY_PERIOD = 15; //24 hours
 const SALT_ROUNDS = 10;
@@ -74,6 +75,278 @@ app.get('/console/charges', verifyToken, async (req,res)=>{
         InternalServerError(res,error)
     }
 })
+
+
+//#region event/ticket management
+app.post('/console/CreateTicket', verifyToken, async (req, res) => {
+    let name = req.body.name;
+    let description = req.body.description;
+    let count = req.body.count;
+    let price = req.body.price;
+    let event_id = req.body.event_id;
+    let dateCreated = Math.round(new Date().getTime() / 1000);
+
+    try {
+        try {
+            CheckRequiredFields({
+                name: name,
+                description: description,
+                count: count,
+                price: price,
+                event_id: event_id,
+            })            
+        } catch (error) {
+            Error('MISSING_FIELDS','Missing Fields',error,res);
+            return
+        }
+
+        let checkEvent = await DB.getRecord('events', { id: event_id })
+
+        if (!checkEvent) {
+            Error('EVENT_MISSING','Event Missing','The requested event does not exist.',res)
+            return
+        }
+
+        let ticket_meta = await DB.insertRecord('tickets_meta', {
+            name: name,
+            description: description,
+            event_id: event_id,
+            price : price,
+            date_created: dateCreated
+        });
+
+        let meta_id = ticket_meta.insertId;
+        for (let i = 0; i < count; i++) {
+            await DB.insertRecord('tickets',
+                {
+                    name: name,
+                    description: description,
+                    meta_id: meta_id,
+                    price: price,
+                    status: 'available',
+                    date_created: dateCreated
+                })
+        }
+
+        Respond('TICKET_CREATED',ticket_meta,res);
+    }
+    catch (error) {
+        console.log(error);
+        InternalServerError(res);
+    }
+})
+
+app.post('/console/PopulateTicket', verifyToken, async (req,res) => {
+    let merchant_user_id = req.user_id;
+    let email = req.email;
+    let ticket_meta_id = req.body.ticket_meta_id;
+    let count = req.body.count;
+    let dateCreated = Math.round(new Date().getTime() / 1000);    
+
+    try {
+        try {
+            CheckRequiredFields({
+                ticket_meta_id: ticket_meta_id,
+                count: count
+            })
+
+            
+        } catch (error) {
+            Error('MISSING_FIELDS', 'Missing Fields', error, res);
+            return
+        }
+
+        //Checking if token is valid
+        let merchant_user = await DB.getRecord('merchant_users',{id: merchant_user_id, email: email})
+        
+        if(!merchant_user)
+        {
+            Error('AUTHENTICATION_FAILED','Invalid User','The token you have provided is invalid',res);
+            return
+        }
+
+        //check if ticket exists
+        let ticket_meta = await DB.getRecord('tickets_meta',{id: ticket_meta_id});
+        
+        if(ticket_meta)
+        {
+            //get event => get event's merchant_id => compare to requesting token's merchant id
+            let event = await DB.getRecord('events',{id: ticket_meta.event_id}) 
+            if(!event || event.merchant_id != merchant_user.merchant_id)
+            {
+                Error('MERCHANT_MISMATCH','Merchant Mismatch','This event either does not exist, or does not belong to you',res)
+                return
+            } 
+
+            let affectedRows = 0 
+            for(let i=0;i<count;i++)
+            {
+                await DB.insertRecord('tickets',{
+                    price: ticket_meta.price,
+                    tx_fee : ticket_meta.tx_fee,
+                    meta_id : ticket_meta.id,
+                    status: 'available',
+                    date_created: dateCreated
+                })
+
+                affectedRows += 1
+            }
+            
+            Respond('TICKETS_POPULATED',{affectedRows: affectedRows},res);
+        }
+        else
+        {
+            Error('TICKET_MISSING','Missing Ticket', 'The requested ticket meta does not exist', res);
+            return
+        }
+        
+    } catch (error) {
+        InternalServerError(res,error);
+    }
+})
+
+app.post('/console/CullTicket', verifyToken, async (req,res) => {
+    let merchant_user_id = req.user_id;
+    let email = req.email;
+    let ticket_meta_id = req.body.ticket_meta_id;
+    let count = req.body.count;
+    let dateCreated = Math.round(new Date().getTime() / 1000);    
+
+    try {
+        try {
+            CheckRequiredFields({
+                ticket_meta_id: ticket_meta_id,
+                count: count
+            })
+        } catch (error) {
+            Error('MISSING_FIELDS', 'Missing Fields', error, res);
+            return
+        }
+        
+        //Checking if token is valid
+        let merchant_user = await DB.getRecord('merchant_users',{id: merchant_user_id, email: email})
+        
+        if(!merchant_user)
+        {
+            Error('AUTHENTICATION_FAILED','Invalid User','The token you have provided is invalid',res);
+            return
+        }
+
+        //check if ticket exists
+        let ticket_meta = await DB.getRecord('tickets_meta',{id: ticket_meta_id});
+        
+        if(ticket_meta)
+        {
+            //get event => get event's merchant_id => compare to requesting token's merchant id
+            let event = await DB.getRecord('events',{id: ticket_meta.event_id}) 
+            if(!event || event.merchant_id != merchant_user.merchant_id)
+            {
+                Error('MERCHANT_MISMATCH','Merchant Mismatch','This event either does not exist, or does not belong to you',res)
+                return
+            } 
+
+            let current_tickets = await DB.getRecords('tickets',{meta_id: ticket_meta_id, status: 'available'})
+            
+            if(current_tickets.length < count)
+            {
+                Error('INSUFFICIENT_TICKETS', 'Insufficient Tickets', `There lesser number of available tickets than requested to cull (${current_tickets.length} left)`,res)
+                return
+            }
+
+            let affectedRows = 0
+            for(let i=0;i<count;i++)
+            {
+                let ticket_to_cull = current_tickets[i]
+                await DB.deleteRecords('tickets',{id: ticket_to_cull.id, status: 'available'})
+                affectedRows += 1
+            }
+
+            let remainding_tickets = await DB.getRecords('tickets',{meta_id: ticket_meta_id, status: 'available'})
+            
+            Respond('TICKETS_CULLED',{previousCount: current_tickets.length, currentCount: remainding_tickets.length},res);
+        }
+        else
+        {
+            Error('TICKET_MISSING','Missing Ticket', 'The requested ticket meta does not exist', res);
+            return
+        }
+    } catch (error) {
+        InternalServerError(res,error);
+    }
+})
+
+
+
+app.post('/console/DeleteEvent', verifyToken, async (req, res) => {
+    let event_id = req.body.event_id;
+
+    try {
+        let getEvent = await DB.getRecord('events', { id: event_id });
+
+        if (!getEvent) {
+            Error('EVENT_MISSING','Event Missing','The requested event does not exist',res);
+
+        }
+
+        let metas = await DB.getRecords('tickets_meta', { event_id: event_id });
+
+        if (metas.length !== 0) {
+            for (let meta of metas) {
+                await DB.deleteRecords('tickets', { meta_id: meta.id });
+            }
+        }
+
+        await DB.deleteRecords('tickets_meta', { event_id: event_id });
+        await DB.deleteRecords('events', { id: event_id });
+        Respond('EVENT_DELETED',{},res);
+    }
+    catch (err) {
+        console.log(err);
+        InternalServerError(res);
+    }
+})
+
+app.post('/console/DeleteTicket', verifyToken, async (req, res) => {
+
+    let ticket_meta_id = req.body.meta_id;
+    try {
+        await DB.deleteRecords('tickets_meta', { id: ticket_meta_id });
+        await DB.deleteRecords('tickets', { meta_id: ticket_meta_id });
+        Respond('TICKET_DELETED',{},res);
+    }
+    catch (err) {
+        console.log(err);
+        InternalServerError(res);
+    }
+})
+
+app.post('/console/CreateEvent', verifyToken, async (req, res) => {
+    let name = req.body.name;
+    let merchant_id = req.body.merchant_id;
+    let location = req.body.location;
+    let date = req.body.date;
+    let time = req.body.time;
+    let dateCreated = Math.round(new Date().getTime() / 1000);
+
+    try {
+        let merchant = await DB.getRecord('merchants', { id: merchant_id })
+
+        if (!merchant) {
+            Error('INVALID_FIELDS','Merchant Missing','The requested merchant does not exist.',res);
+            return;
+        }
+
+        let response = await DB.insertRecord('events', { name: name, merchant_id: merchant_id, location: location, time: time, date: date, created: dateCreated });
+        Respond('EVENT_CREATED', response, res);
+    }
+    catch (error) {
+        console.log(error)
+        InternalServerError(res);
+    }
+})
+
+//#endregion
+
 
 //#endregion
 
@@ -433,131 +706,65 @@ app.post('/Register', async (req, res) => {
     }
 })
 
-//#endregion
-
-//#region event/ticket management
-app.post('/CreateTicket', async (req, res) => {
-    let name = req.body.name;
-    let description = req.body.description;
-    let count = req.body.count;
-    let price = req.body.price;
-    let event_id = req.body.event_id;
-    let dateCreated = Math.round(new Date().getTime() / 1000);
+app.post('/console/RegisterMerchant', async (req, res) => {
+    let username = req.body.username;
+    let password = req.body.password;
+    let email = req.body.email;
+    let merchant_id  = req.body.merchant_id;
+    let dateBegin = Math.round(new Date().getTime() / 1000);
+    let secret = req.body.secret
 
     try {
-        try {
-            CheckRequiredFields({
-                name: name,
-                description: description,
-                count: count,
-                price: price,
-                event_id: event_id,
-            })            
+        try {            
+            CheckRequiredFields({ username, password, email, merchant_id });
         } catch (error) {
             Error('MISSING_FIELDS','Missing Fields',error,res);
             return
         }
 
-        let checkEvent = await DB.getRecord('events', { id: event_id })
-
-        if (!checkEvent) {
-            Error('EVENT_MISSING','Event Missing','The requested event does not exist.',res)
+        if(secret !== CONSOLE_SECRET)
+        {
+            Error('AUTHENTICATION_ERROR','Invalid secret','Invalid secret provided',res);
             return
         }
 
-        let ticket_meta = await DB.insertRecord('tickets_meta', {
-            name: name,
-            description: description,
-            event_id: event_id,
-            price : price,
-            date_created: dateCreated
-        });
+        let merchant_id_record = await DB.getRecord('merchant_users',{merchant_id : merchant_id});
 
-        let meta_id = ticket_meta.insertId;
-        for (let i = 0; i < count; i++) {
-            await DB.insertRecord('tickets',
-                {
-                    name: name,
-                    description: description,
-                    meta_id: meta_id,
-                    price: price,
-                    status: 'available',
-                    date_created: dateCreated
-                })
+        if(merchant_id_record)
+        {
+            Error('REGISTRATION_CONFLICT','Merchant Taken','The requested merchant already has a user account',res);
+            return
         }
 
-        Respond('TICKET_CREATED',ticket_meta,res);
-    }
-    catch (error) {
-        console.log(error);
-        InternalServerError(res);
-    }
-})
+        let usernameRecord = await DB.getRecord('users', { username: username });        
+        let merchantUsernameRecord = await DB.getRecord('merchant_users', { username: username }); //check against merchants in case                
 
-app.post('/DeleteEvent', async (req, res) => {
-    let event_id = req.body.event_id;
+        if (!usernameRecord && !merchantUsernameRecord) {
+            let usersEmailRecord = await DB.getRecord('users', { email: email });
+            let merchantEmailRecord = await DB.getRecord('merchant_users', {email: email}); //check against merchants in case        
+            let facebookEmailRecord = await DB.getRecord('facebook_users', {email : email})
 
-    try {
-        let getEvent = await DB.getRecord('events', { id: event_id });
-
-        if (!getEvent) {
-            Error('EVENT_MISSING','Event Missing','The requested event does not exist',res);
-
-        }
-
-        let metas = await DB.getRecords('tickets_meta', { event_id: event_id });
-
-        if (metas.length !== 0) {
-            for (let meta of metas) {
-                await DB.deleteRecords('tickets', { meta_id: meta.id });
+            if (!usersEmailRecord && !merchantEmailRecord && !facebookEmailRecord) {
+                console.log(`NEW MERCHANT: ${username} - ${email} - Merchant_id:${merchant_id}`);
+                await DB.insertRecord('merchant_users', { username: username, password: password, email: email, merchant_id: merchant_id, date_begin: dateBegin })
+                let userData = await DB.getRecord('merchant_users', { username: username })
+                userData.password = undefined
+                let token = await jwt.sign({ id: userData.id, email: userData.email }, JWT_SECRET);
+                userData.token = token;
+                Respond('REGISTER_SUCCESS',userData,res);
+            }
+            else {        
+                Error('REGISTRATION_CONFLICT','Email Taken', 'The email you have specificed has already been used.',res);
+                return 
             }
         }
-
-        await DB.deleteRecords('tickets_meta', { event_id: event_id });
-        await DB.deleteRecords('events', { id: event_id });
-        Respond('EVENT_DELETED',{},res);
-    }
-    catch (err) {
-        console.log(err);
-        InternalServerError(res);
-    }
-})
-
-app.post('/DeleteTicket', async (req, res) => {
-
-    let ticket_meta_id = req.body.meta_id;
-    try {
-        await DB.deleteRecords('tickets_meta', { id: ticket_meta_id });
-        await DB.deleteRecords('tickets', { meta_id: ticket_meta_id });
-        Respond('TICKET_DELETED',{},res);
-    }
-    catch (err) {
-        console.log(err);
-        InternalServerError(res);
-    }
-})
-
-app.post('/CreateEvent', async (req, res) => {
-    let name = req.body.name;
-    let merchant_id = req.body.merchant_id;
-    let location = req.body.location;
-    let date = req.body.date;
-    let time = req.body.time;
-    let dateCreated = Math.round(new Date().getTime() / 1000);
-
-    try {
-        let merchant = await DB.getRecord('merchants', { id: merchant_id })
-
-        if (!merchant) {
-            Error('INVALID_FIELDS','Merchant Missing','The requested merchant does not exist.',res);
-            return;
+        else {
+            Error('REGISTRATION_CONFLICT','Username Taken', 'The username you have specificed has already been used.',res);
+            return 
         }
-
-        let response = await DB.insertRecord('events', { name: name, merchant_id: merchant_id, location: location, time: time, date: date, created: dateCreated });
-        Respond('EVENT_CREATED', response, res);
     }
-    catch (error) {
-        console.log(error)
+    catch (e) {
+        console.log(e)
         InternalServerError(res);
     }
 })
@@ -1260,7 +1467,8 @@ function InternalServerError(res,error)
     res.json({status: 'EXCEPTION', error: {
         status: 'SERVER_ERROR',
         statusText: 'Server Error',
-        message: 'An internal server error has occured. Please try again later'
+        message: 'An internal server error has occured. Please try again later',
+        extra: error ? error: null
     }})
 }
 
