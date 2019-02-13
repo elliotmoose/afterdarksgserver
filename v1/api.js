@@ -275,8 +275,6 @@ app.post('/console/CullTicket', verifyToken, async (req,res) => {
     }
 })
 
-
-
 app.post('/console/DeleteEvent', verifyToken, async (req, res) => {
     let event_id = req.body.event_id;
 
@@ -776,6 +774,7 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
     let owner_id = req.user_id;
     let ticket_meta_id = req.body.ticket_meta_id;
     let transaction_token = req.body.transaction_token;
+    let now = Math.round(new Date().getTime() / 1000);
 
     try {
         try {
@@ -846,7 +845,8 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
                 //allocate ticket 
                 let allocate_response = await DB.updateRecords('tickets', {
                     status: 'allocated',
-                    owner_id: owner_id
+                    owner_id: owner_id,
+                    date_allocated: now
                 },
                 {
                     id: ticket_to_purchase.id
@@ -885,7 +885,8 @@ app.post('/VerifyTicket', verifyToken, async (req, res) => {
     let merchant_user_id = req.user_id;
     let ticket_id = req.body.ticket_id;
     let signature = req.body.signature; //ticket signature
-    
+    let now = Math.round(new Date().getTime() / 1000);
+
     try {
         //verify signature
         let ticket_is_valid = await bcrypt.compare(`${TICKET_SECRET}${ticket_id}`, signature);
@@ -931,7 +932,7 @@ app.post('/VerifyTicket', verifyToken, async (req, res) => {
         }
 
         if (ticket.status == 'allocated') {
-            let update_ticket = await DB.updateRecords('tickets', { status: 'consumed' }, { id: ticket_id });
+            let update_ticket = await DB.updateRecords('tickets', { status: 'consumed', date_verified: now }, { id: ticket_id });
             Respond('VERIFIED', {}, res)
             return
         }
