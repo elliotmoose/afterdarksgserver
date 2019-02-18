@@ -15,7 +15,8 @@ const bodyParse = require('body-parser');
 app.use(bodyParse.json());
 app.use(bodyParse.urlencoded({ extended: false }));
 
-const config = require('../config')
+const config = require('../config');
+const strings = require('./strings');
 
 const JWT_SECRET = 'gskradretfa'
 const TICKET_SECRET = 'gskradretfa'
@@ -88,15 +89,9 @@ app.post('/console/CreateTicket', verifyToken, async (req, res) => {
 
     try {
         try {
-            CheckRequiredFields({
-                name: name,
-                description: description,
-                count: count,
-                price: price,
-                event_id: event_id,
-            })            
+            CheckRequiredFields({ name: name, description: description, count: count, price: price, event_id: event_id, })            
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields',error,res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -152,7 +147,7 @@ app.post('/console/PopulateTicket', verifyToken, async (req,res) => {
 
             
         } catch (error) {
-            Error('MISSING_FIELDS', 'Missing Fields', error, res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -214,12 +209,9 @@ app.post('/console/CullTicket', verifyToken, async (req,res) => {
 
     try {
         try {
-            CheckRequiredFields({
-                ticket_meta_id: ticket_meta_id,
-                count: count
-            })
+            CheckRequiredFields({ ticket_meta_id: ticket_meta_id, count: count })
         } catch (error) {
-            Error('MISSING_FIELDS', 'Missing Fields', error, res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
         
@@ -567,13 +559,9 @@ app.post('/FacebookLogin', async (req, res) => {
         var dateBegin = Math.round(new Date().getTime() / 1000);
 
         try {
-            CheckRequiredFields({
-                id : id,
-                email : email,
-                name : name
-            })
+            CheckRequiredFields({id: id, emai : email, name: name })
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields', error,res)
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -640,7 +628,7 @@ app.post('/SetAdditionalUserData', verifyToken, async (req,res) => {
                 age : age
             })
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields', error, res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -667,7 +655,7 @@ app.post('/Register', async (req, res) => {
         try {            
             CheckRequiredFields({ username, password, email });
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields',error,res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
         let usernameRecords = await DB.getRecord('users', { username: username });
@@ -689,12 +677,12 @@ app.post('/Register', async (req, res) => {
                 Respond('REGISTER_SUCCESS',userData,res);
             }
             else {        
-                Error('REGISTRATION_CONFLICT','Email Taken', 'The email you have specificed has already been used.',res);
+                Error(strings.EMAIL_TAKEN.STATUS,strings.EMAIL_TAKEN.STATUSTEXT, strings.EMAIL_TAKEN.MESSAGE,res);
                 return 
             }
         }
         else {
-            Error('REGISTRATION_CONFLICT','Username Taken', 'The username you have specificed has already been used.',res);
+            Error(strings.USERNAME_TAKEN.STATUS,strings.USERNAME_TAKEN.STATUSTEXT, strings.USERNAME_TAKEN.MESSAGE,res);
             return 
         }
     }
@@ -716,7 +704,7 @@ app.post('/console/RegisterMerchant', async (req, res) => {
         try {            
             CheckRequiredFields({ username, password, email, merchant_id });
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields',error,res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -780,7 +768,7 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
         try {
             CheckRequiredFields({ owner_id, ticket_meta_id });            
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields',error,res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -977,7 +965,7 @@ app.post('/CreateDiscount', async (req,res)=>{
                 amount: amount
             })
         } catch (error) {
-            Error('MISSING_FIELD','Missing Field',error,res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -1066,15 +1054,10 @@ app.post('/AddToWallet',verifyToken, async (req,res)=>{
 
     try 
     {
-        if(!user_id)
-        {
-            Error('MISSING_FIELD','User id missing','A user id was not specified',res);
-            return
-        }
-
-        if(!discount_id)
-        {
-            Error('MISSING_FIELD','Discount id missing','A discount id was not specified',res);
+        try {
+            CheckRequiredFields({user_id, discount_id})
+        } catch (error) {
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -1146,13 +1129,9 @@ app.post('/ClaimDiscount', verifyToken, async (req,res)=>{
 
     try {
         try {
-            CheckRequiredFields({
-                user_id : user_id,
-                discount_id : discount_id,
-                merchant_code: merchant_code
-            })
+            CheckRequiredFields({ user_id: user_id, discount_id: discount_id, merchant_code: merchant_code })
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields',error,res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -1224,7 +1203,7 @@ app.post('/AddPaymentMethod', verifyToken, async (req, res) => {
         try {
             CheckRequiredFields({ card_token: card_token, user_id: user_id });            
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields',error,res);
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return 
         }
 
@@ -1295,7 +1274,7 @@ app.post('/RemovePaymentMethod', verifyToken, async (req, res) => {
         try {
             CheckRequiredFields({ card_id: card_id, user_id: user_id });            
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields',error,res)
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 
@@ -1336,7 +1315,7 @@ app.post('/MakeDefaultPaymentMethod', verifyToken, async (req, res) => {
         try {
             CheckRequiredFields({ card_id: card_id, user_id: user_id });            
         } catch (error) {
-            Error('MISSING_FIELDS','Missing Fields',error,res)
+            Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
         }
 

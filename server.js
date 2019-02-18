@@ -14,8 +14,9 @@ app.use(express.static(path.join(__dirname, "public")))
 // app.listen(80);
 
 console.log('===================================================================================================')
-console.log('                                           SERVER STARTED                                      ')
+console.log('                                       SERVER STARTED                                      ')
 console.log('===================================================================================================')
+console.log(`===================LIVE:${config.live}======HTTPS:${config.https}=======REMOTE:${config.remote}======================`)
 
 if (config.https) {
     //Create server over HTTPS
