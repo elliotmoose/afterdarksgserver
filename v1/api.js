@@ -559,7 +559,12 @@ app.post('/FacebookLogin', async (req, res) => {
         var dateBegin = Math.round(new Date().getTime() / 1000);
 
         try {
-            CheckRequiredFields({id: id, emai : email, name: name })
+            if(!email)
+            {
+                Error(strings.MISSING_FIELDS.STATUS, strings.MISSING_FIELDS.STATUSTEXT,'It seems Facebook login has not provided your email. Please Signup to join Afterdark.',res)
+                return
+            }
+            CheckRequiredFields({id: id, email : email, name: name })
         } catch (error) {
             Error(strings.MISSING_FIELDS.STATUS,strings.MISSING_FIELDS.STATUSTEXT,error,res);
             return
@@ -841,7 +846,7 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
                 })
                     
                 if (allocate_response.affectedRows == 0) {
-                    throw 'Alocation failed'
+                    throw 'Allocation failed'
                 }
             } catch (error) {
                 console.log(error)
