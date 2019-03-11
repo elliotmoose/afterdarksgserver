@@ -21,7 +21,8 @@ const strings = require('./strings');
 const JWT_SECRET = 'gskradretfa'
 const TICKET_SECRET = 'gskradretfa'
 const CONSOLE_SECRET = 'gskradretfa'
-const EXPIRY_PERIOD = 3600 * 24 * 2; //24 hours
+// const EXPIRY_PERIOD = 3600 * 24 * 2; //24 hours
+const EXPIRY_PERIOD = 3600 * 24 * 7; //7 days
 // const EXPIRY_PERIOD = 15; //24 hours
 const SALT_ROUNDS = 10;
 
@@ -77,6 +78,48 @@ app.get('/console/charges', verifyToken, async (req,res)=>{
     }
 })
 
+app.post('/console/holders', verifyToken, async (req,res)=> {
+    try {
+        let request_discount_id = req.body.discount_id;
+        let owned_discounts = await DB.getRecords('discounts', {meta_id:request_discount_id, status: 'allocated'});
+
+        try {
+            CheckRequiredFields({discount_id: request_discount_id});
+        } catch (error) {
+            Error(strings.MISSING_FIELDS.STATUS, strings.MISSING_FIELDS.STATUSTEXT, error, res);
+            return
+        }
+        let output = []
+        for(let discount of owned_discounts)
+        {
+            let owner = await DB.getRecord('users',{id:discount.owner_id});
+            if(owner.username == null)
+            {
+                let fb_owner = await DB.getRecord('facebook_users',{afterdark_id: discount.owner_id});                
+
+                output.push({
+                    name: fb_owner.name,
+                    email : owner.email,
+                    age: owner.age,
+                    gender: owner.gender,
+                })      
+            }
+            else
+            {
+                output.push({
+                    name: owner.username,
+                    email : owner.email,
+                    age: owner.age,
+                    gender: owner.gender,
+                })                
+            }
+        }
+
+        Respond('SUCCESS', output,res);
+    } catch (error) {
+        InternalServerError(res,error);
+    }
+})
 
 //#region event/ticket management
 app.post('/console/CreateTicket', verifyToken, async (req, res) => {
@@ -334,6 +377,8 @@ app.post('/console/CreateEvent', verifyToken, async (req, res) => {
         InternalServerError(res);
     }
 })
+
+
 
 //#endregion
 
