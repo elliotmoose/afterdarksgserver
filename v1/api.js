@@ -78,9 +78,9 @@ app.get('/console/charges', verifyToken, async (req,res)=>{
     }
 })
 
-app.post('/console/holders', verifyToken, async (req,res)=> {
+app.get('/console/holders', async (req,res)=> {
     try {
-        let request_discount_id = req.body.discount_id;
+        let request_discount_id = req.query.discount_id;
         let owned_discounts = await DB.getRecords('discounts', {meta_id:request_discount_id, status: 'allocated'});
 
         try {
@@ -89,33 +89,41 @@ app.post('/console/holders', verifyToken, async (req,res)=> {
             Error(strings.MISSING_FIELDS.STATUS, strings.MISSING_FIELDS.STATUSTEXT, error, res);
             return
         }
-        let output = []
+
+        var output = '';
         for(let discount of owned_discounts)
         {
             let owner = await DB.getRecord('users',{id:discount.owner_id});
+            let userrow = ''
             if(owner.username == null)
             {
                 let fb_owner = await DB.getRecord('facebook_users',{afterdark_id: discount.owner_id});                
-
-                output.push({
-                    name: fb_owner.name,
-                    email : owner.email,
-                    age: owner.age,
-                    gender: owner.gender,
-                })      
+                let gender = owner.gender == 1 ? 'Male' : owner.gender == 2 ? 'Female' : 'nil'
+                let age = owner.age ? owner.age : 'nil';
+                userrow = `${fb_owner.name} ${owner.email} ${age} ${gender} <br/>`;
+                // output.push({
+                //     name: fb_owner.name,
+                //     email : owner.email,
+                //     age: owner.age,
+                //     gender: owner.gender,
+                // })                     
             }
             else
             {
-                output.push({
-                    name: owner.username,
-                    email : owner.email,
-                    age: owner.age,
-                    gender: owner.gender,
-                })                
+                let gender = owner.gender == 1 ? 'Male' : owner.gender == 2 ? 'Female' : 'nil'
+                let age = owner.age ? owner.age : 'nil';
+                
+                userrow = `${owner.username}* ${owner.email} ${age} ${gender} <br/>`;                     
+            }
+
+            if(output.indexOf(userrow) == -1)
+            {
+                output += userrow;
             }
         }
-
-        Respond('SUCCESS', output,res);
+                
+        res.send(output);
+        // Respond('SUCCESS', output,res);
     } catch (error) {
         InternalServerError(res,error);
     }
