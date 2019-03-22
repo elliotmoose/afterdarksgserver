@@ -129,6 +129,46 @@ app.get('/console/holders', async (req,res)=> {
     }
 })
 
+app.get('/console/ticket_claimants', async (req,res)=> {
+    try {
+        let request_ticket_meta_id = req.query.meta_id;
+        
+        try {
+            CheckRequiredFields({discount_id: request_ticket_meta_id});
+        } catch (error) {
+            Error(strings.MISSING_FIELDS.STATUS, strings.MISSING_FIELDS.STATUSTEXT, error, res);
+            return
+        }
+
+        let claimed_tickets = await DB.getRecords('tickets', {meta_id:request_ticket_meta_id, status: 'claimed'});
+
+        var output = 'Claimed Tickets: <br/>';
+        var count = 0;
+        for(let ticket of claimed_tickets)
+        {
+            count += 1;
+
+            let owner = await DB.getRecord('users',{id:ticket.owner_id});
+            let userrow = ''
+
+            let name = owner.username + '*';
+            if(owner.username == null)
+            {
+                let fb_owner = await DB.getRecord('facebook_users',{afterdark_id: ticket.owner_id});                                                
+                name = fb_owner.name;                
+            }
+
+            output += `${count}. id: ${ticket.id} ${name}<br/>`;                                                         
+        }
+                
+        res.send(output);        
+        // res.json(claimed_tickets);
+        // Respond('SUCCESS', output,res);
+    } catch (error) {
+        InternalServerError(res,error);
+    }
+})
+
 //#region event/ticket management
 app.post('/console/CreateTicket', verifyToken, async (req, res) => {
     let name = req.body.name;
