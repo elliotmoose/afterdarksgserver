@@ -140,7 +140,7 @@ app.get('/console/ticket_claimants', async (req,res)=> {
             return
         }
 
-        let claimed_tickets = await DB.getRecords('tickets', {meta_id:request_ticket_meta_id, status: 'claimed'});
+        let claimed_tickets = await DB.getRecords('tickets', {meta_id:request_ticket_meta_id, status: 'consumed'});
 
         var output = 'Claimed Tickets: <br/>';
         var count = 0;
