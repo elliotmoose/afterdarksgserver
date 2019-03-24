@@ -140,16 +140,23 @@ app.get('/console/ticket_claimants', async (req,res)=> {
             return
         }
 
-        let claimed_tickets = await DB.getRecords('tickets', {meta_id:request_ticket_meta_id, status: 'consumed'});
+        let claimed_tickets = await DB.getRecords('tickets', {meta_id:request_ticket_meta_id});
 
-        var output = 'Claimed Tickets: <br/>';
-        var count = 0;
-        for(let ticket of claimed_tickets)
-        {
-            count += 1;
-
+        var allocated_output = 'Unscanned Purchased Tickets: <br/>';
+        var claimed_output = 'Scanned Tickets: <br/>';
+        var consumed_count = 0;
+        var allocated_count = 0;
+        for(let ticket of claimed_tickets.filter((el)=>el.status == 'consumed' || el.status == 'allocated'))
+        {            
             let owner = await DB.getRecord('users',{id:ticket.owner_id});
-            let userrow = ''
+
+            if(owner === undefined)
+            {
+                continue;
+            }
+            
+            let gender = owner.gender == 1 ? 'Male' : owner.gender == 2 ? 'Female' : 'nil'
+            let age = owner.age ? owner.age : 'nil';            
 
             let name = owner.username + '*';
             if(owner.username == null)
@@ -158,9 +165,19 @@ app.get('/console/ticket_claimants', async (req,res)=> {
                 name = fb_owner.name;                
             }
 
-            output += `${count}. id: ${ticket.id} ${name}<br/>`;                                                         
+            if(ticket.status == 'consumed')
+            {
+                consumed_count += 1;        
+                claimed_output += `${consumed_count}. id: ${ticket.id} ${name} ${gender} ${age} SCANNED<br/>`;                                                         
+            }
+            else if (ticket.status == 'allocated')
+            {
+                allocated_count += 1;
+                allocated_output += `${allocated_count}. id: ${ticket.id} ${name} ${gender} ${age} UNSCANNED<br/>`;                                                         
+            }
         }
                 
+        var output = allocated_output + '<br/>' + claimed_output;
         res.send(output);        
         // res.json(claimed_tickets);
         // Respond('SUCCESS', output,res);
