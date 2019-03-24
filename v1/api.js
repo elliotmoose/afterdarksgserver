@@ -154,7 +154,7 @@ app.get('/console/ticket_claimants', async (req,res)=> {
             {
                 continue;
             }
-            
+
             let gender = owner.gender == 1 ? 'Male' : owner.gender == 2 ? 'Female' : 'nil'
             let age = owner.age ? owner.age : 'nil';            
 
@@ -168,12 +168,12 @@ app.get('/console/ticket_claimants', async (req,res)=> {
             if(ticket.status == 'consumed')
             {
                 consumed_count += 1;        
-                claimed_output += `${consumed_count}. id: ${ticket.id} ${name} ${gender} ${age} SCANNED<br/>`;                                                         
+                claimed_output += `${consumed_count}. id: ${ticket.id} ${name} ${gender} ${age}<br/>`;                                                         
             }
             else if (ticket.status == 'allocated')
             {
                 allocated_count += 1;
-                allocated_output += `${allocated_count}. id: ${ticket.id} ${name} ${gender} ${age} UNSCANNED<br/>`;                                                         
+                allocated_output += `${allocated_count}. id: ${ticket.id} ${name} ${gender} ${age}<br/>`;                                                         
             }
         }
                 
