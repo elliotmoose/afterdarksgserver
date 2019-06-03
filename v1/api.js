@@ -26,6 +26,9 @@ const EXPIRY_PERIOD = 3600 * 24 * 7; //7 days
 // const EXPIRY_PERIOD = 15; //24 hours
 const SALT_ROUNDS = 10;
 
+
+
+
 // Handles request to root only.
 app.get('/', (req, res) => {
     res.status(200);
@@ -847,7 +850,8 @@ app.post('/console/RegisterMerchant', async (req, res) => {
 
             if (!usersEmailRecord && !merchantEmailRecord && !facebookEmailRecord) {
                 console.log(`NEW MERCHANT: ${username} - ${email} - Merchant_id:${merchant_id}`);
-                await DB.insertRecord('merchant_users', { username: username, password: password, email: email, merchant_id: merchant_id, date_begin: dateBegin })
+                let hashedPass = await bcrypt.hash(password, SALT_ROUNDS);
+                await DB.insertRecord('merchant_users', { username: username, password: hashedPass, email: email, merchant_id: merchant_id, date_begin: dateBegin })
                 let userData = await DB.getRecord('merchant_users', { username: username })
                 userData.password = undefined
                 let token = await jwt.sign({ id: userData.id, email: userData.email }, JWT_SECRET);
