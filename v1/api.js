@@ -902,52 +902,29 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
             //check ticket availability
             var tickets = await DB.getRecords('tickets', { meta_id: ticket_meta_id, status: 'available' })
             ThrowWithMessageIfEmpty(tickets, 'These tickets are no longer available.')
-    
-            //purchase
-            // - get stripe customer from adUser_id
-            // - create charge for this customer
-            // - on success, allocate ticket
-            var customer = await DB.getRecord('stripe_customers', { afterdark_id: owner_id });
-            ThrowWithMessageIfEmpty(customer, 'User is not a stripe customer.  Please login again.')            
+            
+            var ticket_to_purchase = tickets[0];
+            var ticket_chargeable = ticket_to_purchase.price + ticket_to_purchase.tx_fee;
+
+            if(ticket_chargeable != 0)
+            {
+                //purchase
+                // - get stripe customer from adUser_id
+                // - create charge for this customer
+                // - on success, allocate ticket
+                var customer = await DB.getRecord('stripe_customers', { afterdark_id: owner_id });
+                ThrowWithMessageIfEmpty(customer, 'User is not a stripe customer.  Please login again.')            
+            }
         } catch (error) {
             Error('INVALID_FIELDS','Invalid Request',error,res)
             return
         }
 
-
-        let customer_id = customer.stripe_customer_id;
-        let ticket_to_purchase = tickets[0];
-        let ticket_chargeable = ticket_to_purchase.price + ticket_to_purchase.tx_fee;
-
-        // console.log(`Charging ${ticket_chargeable} to ${customer_id} for ticket: ${ticket_to_purchase.id}`);
-        let charge_description = `${event.name} - ${ticket_meta.name} - id: ${ticket_to_purchase.id}`
-        try {
-            var charge_response = await adstripe.charge(customer_id, ticket_chargeable, charge_description)            
-        } catch (error) {
-            Error(error.status,error.statusText, error.message,res);
-            return
-        }
-
-        if (charge_response.success === true) {
-            //record charge
-            try {
-                let record_charge_response = await DB.insertRecord('charges', {
-                    id: charge_response.data.id,
-                    ticket_id: ticket_to_purchase.id,
-                    customer: charge_response.data.customer,
-                    amount: charge_response.data.amount,
-                    description: charge_description,
-                    date: charge_response.data.created,
-                    status: charge_response.data.status,
-                    receipt: charge_response.data.receipt_url,
-                    stripe_response: JSON.stringify(charge_response.data)
-                });                
-            } catch (error) {
-                console.log(error)
-                Error('PURCHASE_FAILED','Purchase Failed','The purchase failed to be recorded. Please Contact Support.',res)                
-                return
-            }
-
+        
+        
+        //FREE TICKETS
+        if(ticket_chargeable == 0)
+        {
             try {
                 //allocate ticket 
                 let allocate_response = await DB.updateRecords('tickets', {
@@ -976,8 +953,75 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
                 meta: ticket_meta
             }
 
-            console.log(`Ticket Purchased: ${ticket_payload.id} - Price: $${ticket_payload.price/100}`);
+            console.log(`Free Ticket Purchased: ${ticket_payload.id} - Price: $${ticket_payload.price/100}`);
             Respond('PURCHASE_SUCCESSFUL',ticket_payload,res);
+        }
+        else
+        {            
+            //PAID TICKETS
+            let customer_id = customer.stripe_customer_id;
+
+            // console.log(`Charging ${ticket_chargeable} to ${customer_id} for ticket: ${ticket_to_purchase.id}`);
+            let charge_description = `${event.name} - ${ticket_meta.name} - id: ${ticket_to_purchase.id}`
+            try {
+                var charge_response = await adstripe.charge(customer_id, ticket_chargeable, charge_description)
+            } catch (error) {
+                Error(error.status, error.statusText, error.message, res);
+                return
+            }
+
+            if (charge_response.success === true) {
+                //record charge
+                try {
+                    let record_charge_response = await DB.insertRecord('charges', {
+                        id: charge_response.data.id,
+                        ticket_id: ticket_to_purchase.id,
+                        customer: charge_response.data.customer,
+                        amount: charge_response.data.amount,
+                        description: charge_description,
+                        date: charge_response.data.created,
+                        status: charge_response.data.status,
+                        receipt: charge_response.data.receipt_url,
+                        stripe_response: JSON.stringify(charge_response.data)
+                    });
+                } catch (error) {
+                    console.log(error)
+                    Error('PURCHASE_FAILED', 'Purchase Failed', 'The purchase failed to be recorded. Please Contact Support.', res)
+                    return
+                }
+
+                try {
+                    //allocate ticket 
+                    let allocate_response = await DB.updateRecords('tickets', {
+                        status: 'allocated',
+                        owner_id: owner_id,
+                        date_allocated: now
+                    },
+                        {
+                            id: ticket_to_purchase.id
+                        })
+
+                    if (allocate_response.affectedRows == 0) {
+                        throw 'Allocation failed'
+                    }
+                } catch (error) {
+                    console.log(error)
+                    Error('PURCHASE_FAILED', 'Purchase Failed', 'The ticket failed to allocate. Please Contact Support.', res)
+                    return
+                }
+
+
+                let ticket_payload = {
+                    id: ticket_to_purchase.id,
+                    price: ticket_to_purchase.price,
+                    tx_fee: ticket_to_purchase.tx_fee,
+                    meta: ticket_meta
+                }
+
+                console.log(`Ticket Purchased: ${ticket_payload.id} - Price: $${ticket_payload.price / 100}`);
+                Respond('PURCHASE_SUCCESSFUL', ticket_payload, res);
+            }
+
         }
     }
     catch (error) {
