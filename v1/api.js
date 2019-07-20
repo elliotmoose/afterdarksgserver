@@ -28,12 +28,16 @@ const SALT_ROUNDS = 10;
 
 
 
-
-// Handles request to root only.
 app.get('/', (req, res) => {
-    res.status(200);
-    res.type('text/html');
-    res.sendFile(path.resolve(__dirname, 'index.html'));
+    res.status(200);    
+    res.send({
+        version: 'v1',
+        config: {
+            live: config.live,
+            remote: config.remote,
+            domain : config.domain            
+        }
+    })
 });
 
 //#region console

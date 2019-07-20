@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
+const schedule = require('node-schedule');
 
 const express = require('express');
 const app = express.Router();
@@ -22,8 +23,8 @@ const JWT_SECRET = 'gskradretfa'
 const TICKET_SECRET = 'gskradretfa'
 const CONSOLE_SECRET = 'gskradretfa'
 // const EXPIRY_PERIOD = 3600 * 24 * 2; //24 hours
-// const EXPIRY_PERIOD = 3600 * 24 * 7; //7 days
-const EXPIRY_PERIOD = 30; //7 days
+const EXPIRY_PERIOD = 3600 * 24 * 7; //7 days
+// const EXPIRY_PERIOD = 30; //7 days
 // const EXPIRY_PERIOD = 15; //24 hours
 const SALT_ROUNDS = 10;
 
@@ -31,25 +32,34 @@ async function DiscountsCleanup()
 {
     //check discount expiry
     let now = Math.round(new Date().getTime() / 1000);
-    await DB.query(`UPDATE exports WHERE (date_allocated+${EXPIRY_PERIOD}) < ${now};`);
 
+    //discounts that are:
+    //1. allocated
+    //2. past the expiration period (allocated + expiration time > now)
+    //are made to be available again
+    let rows = await DB.query(`UPDATE discounts SET status='available', date_allocated=NULL, date_claimed=NULL, owner_id=NULL WHERE date_allocated IS NOT NULL AND date_allocated < ${now-EXPIRY_PERIOD} AND status='allocated';`);    
 
     //cleanup expired discounts
-    await DB.updateRecords('discounts', {status: 'available', owner_id: null, date_allocated: null, date_claimed: null},{status: 'expired'});
+    // let rows = await DB.updateRecords('discounts', {status: 'available', owner_id: null, date_allocated: null, date_claimed: null},{status: 'expired'});
     // let deleted = await DB.query('DELETE FROM exports WHERE date_expire < UNIX_TIMESTAMP()*1000;');
-    console.log(`CLEANED UP ${JSON.stringify(deleted["affectedRows"])} ROWS`);
+    console.log(`CLEANED UP ${JSON.stringify(rows["affectedRows"])} ROWS`);
 }
 
-// //schedule clean up every sunday midnight
-// var cleanupSchedule = schedule.scheduleJob('0 0 * * 0', Cleanup);
-// // var j = schedule.scheduleJob('*/2 * * * * *', Cleanup);
-// Cleanup();
+//clean up discounts every minute
+var cleanupSchedule = schedule.scheduleJob('*/1 * * * *', DiscountsCleanup);
+DiscountsCleanup();
 
 // Handles request to root only.
 app.get('/', (req, res) => {
-    res.status(200);
-    res.type('text/html');
-    res.sendFile(path.resolve(__dirname, 'index.html'));
+    res.status(200);    
+    res.send({
+        version: 'v2',
+        config: {
+            live: config.live,
+            remote: config.remote,
+            domain : config.domain            
+        }
+    })
 });
 
 //#region console
@@ -1357,11 +1367,11 @@ app.post('/ClaimDiscount', verifyToken, async (req,res)=>{
         }
 
 
-        let discount = await DB.getRecord('discounts',{id: discount_id})
+        let discount = await DB.getRecord('discounts',{id: discount_id, status: 'allocated'})
         
         if(!discount)
         {
-            Error('DISCOUNT_MISSING','Discount Missing','The requested discount does not exist.', res);
+            Error('DISCOUNT_MISSING','Discount Unavailable','The discount you are requesting for may have expired and is unavailable.', res);
             return
         }
 
@@ -1375,7 +1385,7 @@ app.post('/ClaimDiscount', verifyToken, async (req,res)=>{
 
         if(discount.owner_id != user_id)
         {
-            Error('DISCOUNT_OWNER_MISMATCH','Discount Owner Mismatch','The discount does not belong to this user.', res);
+            Error('DISCOUNT_OWNER_MISMATCH','Discount Owner Mismatch','The discount does not belong to you.', res);
             return
         }
 
