@@ -886,6 +886,7 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
     let ticket_meta_id = req.body.ticket_meta_id;
     let transaction_token = req.body.transaction_token;
     let now = Math.round(new Date().getTime() / 1000);
+    let count = req.body.count; //THIS VERSION SHOULD NOT SUPPORT COUNT
 
     try {
         try {
@@ -895,6 +896,12 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
             return
         }
 
+        if(count !== undefined)
+        {            
+            //domain is wrong in app, but requests to purchase multiple tickets
+            Error('WRONG_VERSION', 'Outdated', 'Your app version is outdated. Please update the app before making purchases',res);
+            return;
+        }
         //check owner exists
         try {
             var user = await DB.getRecord('users', { id: owner_id });
