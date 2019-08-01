@@ -28,12 +28,16 @@ const SALT_ROUNDS = 10;
 
 
 
-
-// Handles request to root only.
 app.get('/', (req, res) => {
-    res.status(200);
-    res.type('text/html');
-    res.sendFile(path.resolve(__dirname, 'index.html'));
+    res.status(200);    
+    res.send({
+        version: 'v1',
+        config: {
+            live: config.live,
+            remote: config.remote,
+            domain : config.domain            
+        }
+    })
 });
 
 //#region console
@@ -889,7 +893,11 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
     let count = req.body.count;
     let transaction_token = req.body.transaction_token;
     let now = Math.round(new Date().getTime() / 1000);
+    let count = req.body.count; //THIS VERSION SHOULD NOT SUPPORT COUNT
 
+    Error('WRONG_VERSION', 'Outdated', 'Your app version is outdated. Please update the app before making purchases',res);
+    return;
+    
     try {
         try {
             CheckRequiredFields({ count, owner_id, ticket_meta_id });            
@@ -898,6 +906,12 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
             return
         }
 
+        if(count !== undefined)
+        {            
+            //domain is wrong in app, but requests to purchase multiple tickets
+            Error('WRONG_VERSION', 'Outdated', 'Your app version is outdated. Please update the app before making purchases',res);
+            return;
+        }
         //check owner exists
         try {
             var user = await DB.getRecord('users', { id: owner_id });

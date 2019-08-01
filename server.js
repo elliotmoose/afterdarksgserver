@@ -2,12 +2,14 @@ const express = require('express');
 const path = require('path');
 const app = express();
 const api_v1 = require('./v1/api');
+const api_v2 = require('./v2/api');
 const config = require('./config');
 const https = require('https');
 const http = require('http');
 
 app.set('json spaces', 2);
 app.use('/api/v1',api_v1);
+app.use('/api/v2',api_v2);
 app.use(express.static(path.join(__dirname, "public")))
 
 // app.use('/scripts', express.static(__dirname + '/node_modules'));
