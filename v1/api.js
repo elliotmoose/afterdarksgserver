@@ -888,6 +888,9 @@ app.post('/PurchaseTicket', verifyToken, async (req, res) => {
     let now = Math.round(new Date().getTime() / 1000);
     let count = req.body.count; //THIS VERSION SHOULD NOT SUPPORT COUNT
 
+    Error('WRONG_VERSION', 'Outdated', 'Your app version is outdated. Please update the app before making purchases',res);
+    return;
+    
     try {
         try {
             CheckRequiredFields({ owner_id, ticket_meta_id });            
