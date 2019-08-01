@@ -889,8 +889,7 @@ app.post('/console/RegisterMerchant', async (req, res) => {
 //add tx_fee_included
 app.post('/PurchaseTicket', verifyToken, async (req, res) => {
     let owner_id = req.user_id;
-    let ticket_meta_id = req.body.ticket_meta_id;
-    let count = req.body.count;
+    let ticket_meta_id = req.body.ticket_meta_id;    
     let transaction_token = req.body.transaction_token;
     let now = Math.round(new Date().getTime() / 1000);
     let count = req.body.count; //THIS VERSION SHOULD NOT SUPPORT COUNT
