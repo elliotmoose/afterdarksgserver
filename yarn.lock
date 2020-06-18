@@ -40,10 +40,10 @@ angular-messages@^1.6.10:
   resolved "https://registry.yarnpkg.com/angular-messages/-/angular-messages-1.7.5.tgz#7c2fd781315a43a19838b117da0142a988454e14"
   integrity sha512-YDpJpFLyrIgZjE/sIAjgww1y6r3QqXBJbNDI0QjftD37vHXLkwvAOo3A4bxPw8BikyGLcJrFrgf6hRAzntJIWA==
 
-angular@^1.6.10:
-  version "1.7.5"
-  resolved "https://registry.yarnpkg.com/angular/-/angular-1.7.5.tgz#d1c1c01c6f5dc835638f3f9aa51012857bdac49e"
-  integrity sha512-760183yxtGzni740IBTieNuWLtPNAoMqvmC0Z62UoU0I3nqk+VJuO3JbQAXOyvo3Oy/ZsdNQwrSTh/B0OQZjNw==
+angular@^1.8.0:
+  version "1.8.0"
+  resolved "https://registry.yarnpkg.com/angular/-/angular-1.8.0.tgz#b1ec179887869215cab6dfd0df2e42caa65b1b51"
+  integrity sha512-VdaMx+Qk0Skla7B5gw77a8hzlcOakwF8mjlW13DpIWIDlfqwAbSSLfd8N/qZnzEmQF4jC4iofInd3gE7vL8ZZg==
 
 ansi-regex@^2.0.0:
   version "2.1.1"
